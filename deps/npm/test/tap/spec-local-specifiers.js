@@ -11,9 +11,9 @@ var Dir = Tacks.Dir
 var common = require('../common-tap.js')
 var isWindows = require('../../lib/utils/is-windows.js')
 
-var basedir = path.join(__dirname, path.basename(__filename, '.js'))
+var basedir = common.pkg
 var testdir = path.join(basedir, 'testdir')
-var cachedir = path.join(basedir, 'cache')
+var cachedir = common.cache
 var globaldir = path.join(basedir, 'global')
 var tmpdir = path.join(basedir, 'tmp')
 
@@ -365,7 +365,7 @@ testdirContent['install-behavior'] = Dir({
       }
     })
   }),
-  'noext': File(new Buffer(
+  'noext': File(Buffer.from(
     '1f8b08000000000000032b484cce4e4c4fd52f80d07a59c5f9790c540606' +
     '06066626260a20dadccc144c1b1841f86000923334363037343536343732' +
     '633000728c0c80f2d4760836505a5c925804740aa5e640bca200a78708a8' +
@@ -373,7 +373,7 @@ testdirContent['install-behavior'] = Dir({
     '1928d5720db41b47c1281805a36014501f00005012007200080000',
     'hex'
   )),
-  'tarball-1.0.0.tgz': File(new Buffer(
+  'tarball-1.0.0.tgz': File(Buffer.from(
     '1f8b08000000000000032b484cce4e4c4fd52f80d07a59c5f9790c540606' +
     '06066626260a20dadccc144c1b1841f8606062a6c060686c606e686a6c68' +
     '666ec26000e480e5a9ed106ca0b4b824b108e8144acd817845014e0f1150' +
@@ -586,7 +586,7 @@ test('save behavior', function (t) {
       t.is(deps['sb-transitive'], 'file:../sb-transitive', 'package.json')
       var sdep = shrinkwrap.dependencies['sb-transitive'] || {}
       var tdep = sdep.dependencies.sbta
-      t.like(tdep, {bundled: true, version: 'file:../sb-transitive/sbta'}, 'npm-shrinkwrap.json transitive dep')
+      t.like(tdep, {bundled: null, version: 'file:../sb-transitive/sbta'}, 'npm-shrinkwrap.json transitive dep')
       t.like(sdep, {bundled: null, version: 'file:../sb-transitive'}, 'npm-shrinkwrap.json direct dep')
       t.done()
     })
@@ -609,11 +609,133 @@ test('save behavior', function (t) {
   })
 })
 
+var rmdir = testdir + '/remove-behavior'
+testdirContent['remove-behavior'] = Dir({
+  'rmsymlink': Dir({
+    'package.json': File({
+      name: 'remove-behavior',
+      version: '1.0.0',
+      dependencies: {
+        dep1: 'file:dep1'
+      }
+    }),
+    'package-lock.json': File({
+      name: 'remove-behavior',
+      version: '1.0.0',
+      lockfileVersion: 1,
+      requires: true,
+      dependencies: {
+        dep1: {
+          version: 'file:dep1',
+          requires: {
+            dep2: 'file:dep2'
+          },
+          dependencies: {
+            dep2: {
+              version: 'file:dep2',
+              bundled: true
+            }
+          }
+        }
+      }
+    }),
+    dep1: Dir({
+      'package.json': File({
+        name: 'dep1',
+        version: '1.0.0',
+        dependencies: {
+          dep2: 'file:../dep2'
+        }
+      }),
+      'node_modules': Dir({
+        dep2: Symlink('../../dep2')
+      })
+    }),
+    dep2: Dir({
+      'package.json': File({
+        name: 'dep2',
+        version: '1.0.0'
+      })
+    }),
+    'node_modules': Dir({
+      dep1: Symlink('../dep1')
+    })
+  }),
+  'rmesymlink': Dir({
+    'package.json': File({
+      name: 'remove-behavior',
+      version: '1.0.0',
+      dependencies: {
+        edep1: 'file:../edep1'
+      }
+    }),
+    'package-lock.json': File({
+      name: 'remove-behavior',
+      version: '1.0.0',
+      lockfileVersion: 1,
+      requires: true,
+      dependencies: {
+        edep1: {
+          version: 'file:../edep1',
+          requires: {
+            edep2: 'file:../edep2'
+          },
+          dependencies: {
+            edep2: {
+              version: 'file:../edep2',
+              bundled: true
+            }
+          }
+        }
+      }
+    }),
+    'node_modules': Dir({
+      edep1: Symlink('../../edep1')
+    })
+  }),
+  edep1: Dir({
+    'package.json': File({
+      name: 'edep1',
+      version: '1.0.0',
+      dependencies: {
+        edep2: 'file:../edep2'
+      }
+    }),
+    'node_modules': Dir({
+      edep2: Symlink('../../edep2')
+    })
+  }),
+  edep2: Dir({
+    'package.json': File({
+      name: 'edep2',
+      version: '1.0.0'
+    })
+  })
+})
+
 test('removal', function (t) {
-  t.plan(3)
-  t.test('should remove the symlink')
-  t.test('should not remove the transitive deps if it was not a `link:` type specifier.')
-  t.test("should not remove transitive deps if it's outside the package and --preserver-symlinks isn't set")
+  t.plan(2)
+
+  t.test('should remove the symlink', (t) => {
+    const rmconf = {cwd: `${rmdir}/rmsymlink`, env: conf.env, stdio: conf.stdio}
+    return common.npm(['uninstall', 'dep1'], rmconf).spread((code, stdout) => {
+      t.is(code, 0, 'uninstall ran ok')
+      t.comment(stdout)
+      noFileExists(t, `${rmdir}/rmsymlink/node_modules/dep1`, 'removed symlink')
+      noFileExists(t, `${rmdir}/rmsymlink/dep1/node_modules/dep2`, 'removed transitive dep')
+      fileExists(t, `${rmdir}/rmsymlink/dep2`, 'original transitive dep still exists')
+    })
+  })
+  t.test("should not remove transitive deps if it's outside the package and --preserver-symlinks isn't set", (t) => {
+    const rmconf = {cwd: `${rmdir}/rmesymlink`, env: conf.env, stdio: conf.stdio}
+    return common.npm(['uninstall', 'edep1'], rmconf).spread((code, stdout) => {
+      t.is(code, 0, 'uninstall ran ok')
+      t.comment(stdout)
+      noFileExists(t, `${rmdir}/rmsymlink/node_modules/edep1`, 'removed symlink')
+      fileExists(t, `${rmdir}/edep1/node_modules/edep2`, 'did NOT remove transitive dep')
+      fileExists(t, `${rmdir}/edep2`, 'original transitive dep still exists')
+    })
+  })
 })
 
 test('misc', function (t) {

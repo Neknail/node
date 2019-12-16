@@ -25,9 +25,11 @@ const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
 
-const file = path.join(common.tmpDir, 'write.txt');
+const tmpdir = require('../common/tmpdir');
 
-common.refreshTmpDir();
+const file = path.join(tmpdir.path, 'write.txt');
+
+tmpdir.refresh();
 
 {
   const stream = fs.WriteStream(file);
@@ -36,6 +38,7 @@ common.refreshTmpDir();
   fs.close = function(fd) {
     assert.ok(fd, 'fs.close must not be called without an undefined fd.');
     fs.close = _fs_close;
+    fs.closeSync(fd);
   };
   stream.destroy();
 }
@@ -47,5 +50,19 @@ common.refreshTmpDir();
     assert.fail('\'drain\' event must not be emitted before ' +
                 'stream.write() has been called at least once.');
   });
+  stream.destroy();
+}
+
+// Throws if data is not of type Buffer.
+{
+  const stream = fs.createWriteStream(file);
+  stream.on('error', common.expectsError({
+    code: 'ERR_INVALID_ARG_TYPE',
+    type: TypeError
+  }));
+  stream.write(42, null, common.expectsError({
+    code: 'ERR_INVALID_ARG_TYPE',
+    type: TypeError
+  }));
   stream.destroy();
 }

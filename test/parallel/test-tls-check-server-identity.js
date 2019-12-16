@@ -22,15 +22,20 @@
 'use strict';
 const common = require('../common');
 
-if (!common.hasCrypto) {
+if (!common.hasCrypto)
   common.skip('missing crypto');
-  return;
-}
 
 const assert = require('assert');
 const util = require('util');
 
 const tls = require('tls');
+
+common.expectWarning('DeprecationWarning', [
+  ['The URI http://[a.b.a.com]/ found in cert.subjectaltname ' +
+  'is not a valid URI, and is supported in the tls module ' +
+  'solely for compatibility.',
+   'DEP0109'],
+]);
 
 const tests = [
   // False-y values.
@@ -65,6 +70,48 @@ const tests = [
     error: 'Host: a.com. is not cert\'s CN: .a.com'
   },
 
+  // IP address in CN. Technically allowed but so rare that we reject
+  // it anyway. If we ever do start allowing them, we should take care
+  // to only allow public (non-internal, non-reserved) IP addresses,
+  // because that's what the spec mandates.
+  {
+    host: '8.8.8.8',
+    cert: { subject: { CN: '8.8.8.8' } },
+    error: 'IP: 8.8.8.8 is not in the cert\'s list: '
+  },
+
+  // The spec suggests that a "DNS:" Subject Alternative Name containing an
+  // IP address is valid but it seems so suspect that we currently reject it.
+  {
+    host: '8.8.8.8',
+    cert: { subject: { CN: '8.8.8.8' }, subjectaltname: 'DNS:8.8.8.8' },
+    error: 'IP: 8.8.8.8 is not in the cert\'s list: '
+  },
+
+  // Likewise for "URI:" Subject Alternative Names.
+  // See also https://github.com/nodejs/node/issues/8108.
+  {
+    host: '8.8.8.8',
+    cert: { subject: { CN: '8.8.8.8' }, subjectaltname: 'URI:http://8.8.8.8/' },
+    error: 'IP: 8.8.8.8 is not in the cert\'s list: '
+  },
+
+  // An "IP Address:" Subject Alternative Name however is acceptable.
+  {
+    host: '8.8.8.8',
+    cert: { subject: { CN: '8.8.8.8' }, subjectaltname: 'IP Address:8.8.8.8' }
+  },
+
+  // But not when it's a CIDR.
+  {
+    host: '8.8.8.8',
+    cert: {
+      subject: { CN: '8.8.8.8' },
+      subjectaltname: 'IP Address:8.8.8.0/24'
+    },
+    error: 'IP: 8.8.8.8 is not in the cert\'s list: '
+  },
+
   // Wildcards in CN
   { host: 'b.a.com', cert: { subject: { CN: '*.a.com' } } },
   {
@@ -94,6 +141,20 @@ const tests = [
     host: 'a.com',
     cert: { },
     error: 'Cert is empty'
+  },
+
+  // Empty Subject w/DNS name
+  {
+    host: 'a.com', cert: {
+      subjectaltname: 'DNS:a.com',
+    }
+  },
+
+  // Empty Subject w/URI name
+  {
+    host: 'a.b.a.com', cert: {
+      subjectaltname: 'URI:http://a.b.a.com/',
+    }
   },
 
   // Multiple CN fields
@@ -219,6 +280,13 @@ const tests = [
     },
     error: 'Host: a.b.a.com. is not in the cert\'s altnames: ' +
            'URI:http://*.b.a.com/'
+  },
+  // Invalid URI
+  {
+    host: 'a.b.a.com', cert: {
+      subjectaltname: 'URI:http://[a.b.a.com]/',
+      subject: {}
+    }
   },
   // IP addresses
   {

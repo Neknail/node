@@ -4,23 +4,21 @@
 
 #include "test/unittests/test-utils.h"
 
-#include "src/v8.h"
-
-#include "test/common/wasm/test-signatures.h"
-
-#include "src/bit-vector.h"
-#include "src/objects-inl.h"
-#include "src/objects.h"
-
+#include "src/init/v8.h"
+#include "src/objects/objects-inl.h"
+#include "src/objects/objects.h"
+#include "src/utils/bit-vector.h"
 #include "src/wasm/function-body-decoder.h"
-#include "src/wasm/wasm-macro-gen.h"
 #include "src/wasm/wasm-module.h"
 
-#define WASM_SET_ZERO(i) WASM_SET_LOCAL(i, WASM_ZERO)
+#include "test/common/wasm/test-signatures.h"
+#include "test/common/wasm/wasm-macro-gen.h"
 
 namespace v8 {
 namespace internal {
 namespace wasm {
+
+#define WASM_SET_ZERO(i) WASM_SET_LOCAL(i, WASM_ZERO)
 
 class WasmLoopAssignmentAnalyzerTest : public TestWithZone {
  public:
@@ -113,7 +111,7 @@ TEST_F(WasmLoopAssignmentAnalyzerTest, NestedIf) {
 TEST_F(WasmLoopAssignmentAnalyzerTest, BigLocal) {
   num_locals = 65000;
   for (int i = 13; i < 65000; i = static_cast<int>(i * 1.5)) {
-    byte code[] = {WASM_LOOP(WASM_I32V_1(11), kExprSetLocal, U32V_3(i))};
+    byte code[] = {WASM_LOOP(WASM_I32V_1(11), kExprLocalSet, U32V_3(i))};
 
     BitVector* assigned = Analyze(code, code + arraysize(code));
     for (int j = 0; j < assigned->length(); j++) {
@@ -178,7 +176,7 @@ TEST_F(WasmLoopAssignmentAnalyzerTest, Loop2) {
 }
 
 TEST_F(WasmLoopAssignmentAnalyzerTest, Malformed) {
-  byte code[] = {kExprLoop, kLocalVoid, kExprF32Neg, kExprBrTable, 0x0e, 'h',
+  byte code[] = {kExprLoop, kLocalVoid, kExprF32Neg, kExprBrTable, 0x0E, 'h',
                  'e',       'l',        'l',         'o',          ',',  ' ',
                  'w',       'o',        'r',         'l',          'd',  '!'};
   BitVector* assigned = Analyze(code, code + arraysize(code));
@@ -187,11 +185,13 @@ TEST_F(WasmLoopAssignmentAnalyzerTest, Malformed) {
 
 TEST_F(WasmLoopAssignmentAnalyzerTest, regress_642867) {
   static const byte code[] = {
-      WASM_LOOP(WASM_ZERO, kExprSetLocal, 0xfa, 0xff, 0xff, 0xff,
-                0x0f)};  // local index LEB128 0xfffffffa
+      WASM_LOOP(WASM_ZERO, kExprLocalSet, 0xFA, 0xFF, 0xFF, 0xFF,
+                0x0F)};  // local index LEB128 0xFFFFFFFA
   // Just make sure that the analysis does not crash.
   Analyze(code, code + arraysize(code));
 }
+
+#undef WASM_SET_ZERO
 
 }  // namespace wasm
 }  // namespace internal

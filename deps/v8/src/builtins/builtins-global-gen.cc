@@ -4,7 +4,7 @@
 
 #include "src/builtins/builtins-utils-gen.h"
 #include "src/builtins/builtins.h"
-#include "src/code-stub-assembler.h"
+#include "src/codegen/code-stub-assembler.h"
 
 namespace v8 {
 namespace internal {
@@ -30,13 +30,12 @@ TF_BUILTIN(GlobalIsFinite, CodeStubAssembler) {
     // Check if {num} is a HeapNumber.
     Label if_numisheapnumber(this),
         if_numisnotheapnumber(this, Label::kDeferred);
-    Branch(IsHeapNumberMap(LoadMap(num)), &if_numisheapnumber,
-           &if_numisnotheapnumber);
+    Branch(IsHeapNumber(num), &if_numisheapnumber, &if_numisnotheapnumber);
 
     BIND(&if_numisheapnumber);
     {
       // Check if {num} contains a finite, non-NaN value.
-      Node* num_value = LoadHeapNumberValue(num);
+      TNode<Float64T> num_value = LoadHeapNumberValue(num);
       BranchIfFloat64IsNaN(Float64Sub(num_value, num_value), &return_false,
                            &return_true);
     }
@@ -44,17 +43,16 @@ TF_BUILTIN(GlobalIsFinite, CodeStubAssembler) {
     BIND(&if_numisnotheapnumber);
     {
       // Need to convert {num} to a Number first.
-      Callable callable = CodeFactory::NonNumberToNumber(isolate());
-      var_num.Bind(CallStub(callable, context, num));
+      var_num.Bind(CallBuiltin(Builtins::kNonNumberToNumber, context, num));
       Goto(&loop);
     }
   }
 
   BIND(&return_true);
-  Return(BooleanConstant(true));
+  Return(TrueConstant());
 
   BIND(&return_false);
-  Return(BooleanConstant(false));
+  Return(FalseConstant());
 }
 
 // ES6 #sec-isnan-number
@@ -78,30 +76,28 @@ TF_BUILTIN(GlobalIsNaN, CodeStubAssembler) {
     // Check if {num} is a HeapNumber.
     Label if_numisheapnumber(this),
         if_numisnotheapnumber(this, Label::kDeferred);
-    Branch(IsHeapNumberMap(LoadMap(num)), &if_numisheapnumber,
-           &if_numisnotheapnumber);
+    Branch(IsHeapNumber(num), &if_numisheapnumber, &if_numisnotheapnumber);
 
     BIND(&if_numisheapnumber);
     {
       // Check if {num} contains a NaN.
-      Node* num_value = LoadHeapNumberValue(num);
+      TNode<Float64T> num_value = LoadHeapNumberValue(num);
       BranchIfFloat64IsNaN(num_value, &return_true, &return_false);
     }
 
     BIND(&if_numisnotheapnumber);
     {
       // Need to convert {num} to a Number first.
-      Callable callable = CodeFactory::NonNumberToNumber(isolate());
-      var_num.Bind(CallStub(callable, context, num));
+      var_num.Bind(CallBuiltin(Builtins::kNonNumberToNumber, context, num));
       Goto(&loop);
     }
   }
 
   BIND(&return_true);
-  Return(BooleanConstant(true));
+  Return(TrueConstant());
 
   BIND(&return_false);
-  Return(BooleanConstant(false));
+  Return(FalseConstant());
 }
 
 }  // namespace internal

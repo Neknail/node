@@ -15,7 +15,7 @@ const queue = [];
 
 writable._write = (chunk, encoding, cb) => {
   if (isCurrentlyBufferingWrites)
-    queue.push({chunk, cb});
+    queue.push({ chunk, cb });
   else
     cb();
 };
@@ -28,22 +28,25 @@ readable.pipe(writable);
 
 readable.once('pause', common.mustCall(() => {
   assert.strictEqual(
-    readable._readableState.awaitDrain,
-    1,
-    'awaitDrain doesn\'t increase'
+    readable._readableState.awaitDrainWriters,
+    writable,
+    'Expected awaitDrainWriters to be a Writable but instead got ' +
+    `${readable._readableState.awaitDrainWriters}`
   );
   // First pause, resume manually. The next write() to writable will still
   // return false, because chunks are still being buffered, so it will increase
   // the awaitDrain counter again.
+
   process.nextTick(common.mustCall(() => {
     readable.resume();
   }));
 
   readable.once('pause', common.mustCall(() => {
     assert.strictEqual(
-      readable._readableState.awaitDrain,
-      1,
-      '.resume() does not reset counter'
+      readable._readableState.awaitDrainWriters,
+      writable,
+      '.resume() should not reset the awaitDrainWriters, but instead got ' +
+      `${readable._readableState.awaitDrainWriters}`
     );
     // Second pause, handle all chunks from now on. Once all callbacks that
     // are currently queued up are handled, the awaitDrain drain counter should
@@ -62,9 +65,11 @@ readable.push(null);
 
 writable.on('finish', common.mustCall(() => {
   assert.strictEqual(
-    readable._readableState.awaitDrain,
-    0,
-    'awaitDrain not 0 after all chunks are written'
+    readable._readableState.awaitDrainWriters,
+    null,
+    `awaitDrainWriters should be reset to null
+    after all chunks are written but instead got
+    ${readable._readableState.awaitDrainWriters}`
   );
   // Everything okay, all chunks were written.
 }));

@@ -27,14 +27,11 @@
 
 namespace node {
 
-extern bool zero_fill_all_buffers;
-
 namespace Buffer {
 
-static const unsigned int kMaxLength =
-    sizeof(int32_t) == sizeof(intptr_t) ? 0x3fffffff : 0x7fffffff;
+static const unsigned int kMaxLength = v8::TypedArray::kMaxLength;
 
-NODE_EXTERN typedef void (*FreeCallback)(char* data, void* hint);
+typedef void (*FreeCallback)(char* data, void* hint);
 
 NODE_EXTERN bool HasInstance(v8::Local<v8::Value> val);
 NODE_EXTERN bool HasInstance(v8::Local<v8::Object> val);
@@ -67,6 +64,12 @@ NODE_EXTERN v8::MaybeLocal<v8::Object> New(v8::Isolate* isolate,
 NODE_EXTERN v8::MaybeLocal<v8::Object> New(v8::Isolate* isolate,
                                            char* data,
                                            size_t len);
+
+// Creates a Buffer instance over an existing ArrayBuffer.
+NODE_EXTERN v8::MaybeLocal<v8::Uint8Array> New(v8::Isolate* isolate,
+                                               v8::Local<v8::ArrayBuffer> ab,
+                                               size_t byte_offset,
+                                               size_t length);
 
 // This is verbose to be explicit with inline commenting
 static inline bool IsWithinBounds(size_t off, size_t len, size_t max) {

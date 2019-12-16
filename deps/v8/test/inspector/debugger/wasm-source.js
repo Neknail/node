@@ -4,7 +4,8 @@
 
 // Flags: --expose-wasm
 
-utils.load('test/mjsunit/wasm/wasm-constants.js');
+let {session, contextGroup, Protocol} = InspectorTest.start('Tests how wasm scrips report the source');
+
 utils.load('test/mjsunit/wasm/wasm-module-builder.js');
 
 var builder = new WasmModuleBuilder();
@@ -45,8 +46,8 @@ function testFunction(bytes) {
   instance.exports.main();
 }
 
-InspectorTest.addScript(testFunction.toString());
-InspectorTest.addScript('var module_bytes = ' + JSON.stringify(module_bytes));
+contextGroup.addScript(testFunction.toString());
+contextGroup.addScript('var module_bytes = ' + JSON.stringify(module_bytes));
 
 Protocol.Debugger.enable();
 Protocol.Debugger.onPaused(handleDebuggerPaused);

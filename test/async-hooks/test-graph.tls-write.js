@@ -1,21 +1,17 @@
 'use strict';
 
 const common = require('../common');
+if (!common.hasCrypto)
+  common.skip('missing crypto');
+
+if (!common.hasIPv6)
+  common.skip('IPv6 support required');
+
 const initHooks = require('./init-hooks');
 const verifyGraph = require('./verify-graph');
-const fs = require('fs');
-
-if (!common.hasCrypto) {
-  common.skip('missing crypto');
-  return;
-}
-
-if (!common.hasIPv6) {
-  common.skip('IPv6 support required');
-  return;
-}
-
 const tls = require('tls');
+const fixtures = require('../common/fixtures');
+
 const hooks = initHooks();
 hooks.enable();
 
@@ -24,27 +20,29 @@ hooks.enable();
 //
 const server = tls
   .createServer({
-    cert: fs.readFileSync(common.fixturesDir + '/test_cert.pem'),
-    key: fs.readFileSync(common.fixturesDir + '/test_key.pem')
+    cert: fixtures.readKey('rsa_cert.crt'),
+    key: fixtures.readKey('rsa_private.pem')
   })
   .on('listening', common.mustCall(onlistening))
   .on('secureConnection', common.mustCall(onsecureConnection))
-  .listen(common.PORT);
+  .listen(0);
 
 function onlistening() {
   //
   // Creating client and connecting it to server
   //
   tls
-    .connect(common.PORT, { rejectUnauthorized: false })
+    .connect(server.address().port, { rejectUnauthorized: false })
     .on('secureConnect', common.mustCall(onsecureConnect));
 }
 
 function onsecureConnection() {}
 
 function onsecureConnect() {
-  // Destroying client socket
-  this.destroy();
+  // end() client socket, which causes slightly different hook events than
+  // destroy(), but with TLS1.3 destroy() rips the connection down before the
+  // server completes the handshake.
+  this.end();
 
   // Closing server
   server.close(common.mustCall(onserverClosed));
@@ -59,21 +57,17 @@ function onexit() {
 
   verifyGraph(
     hooks,
-    [ { type: 'TCPWRAP', id: 'tcp:1', triggerId: null },
-      { type: 'TCPWRAP', id: 'tcp:2', triggerId: 'tcp:1' },
-      { type: 'TLSWRAP', id: 'tls:1', triggerId: 'tcp:1' },
+    [ { type: 'TCPSERVERWRAP', id: 'tcpserver:1', triggerAsyncId: null },
+      { type: 'TCPWRAP', id: 'tcp:1', triggerAsyncId: 'tcpserver:1' },
+      { type: 'TLSWRAP', id: 'tls:1', triggerAsyncId: 'tcpserver:1' },
       { type: 'GETADDRINFOREQWRAP',
-        id: 'getaddrinforeq:1', triggerId: 'tls:1' },
+        id: 'getaddrinforeq:1', triggerAsyncId: 'tls:1' },
       { type: 'TCPCONNECTWRAP',
-        id: 'tcpconnect:1', triggerId: 'tcp:2' },
-      { type: 'WRITEWRAP', id: 'write:1', triggerId: 'tcpconnect:1' },
-      { type: 'TCPWRAP', id: 'tcp:3', triggerId: 'tcp:1' },
-      { type: 'TLSWRAP', id: 'tls:2', triggerId: 'tcp:1' },
-      { type: 'TIMERWRAP', id: 'timer:1', triggerId: 'tcp:1' },
-      { type: 'WRITEWRAP', id: 'write:2', triggerId: null },
-      { type: 'WRITEWRAP', id: 'write:3', triggerId: null },
-      { type: 'WRITEWRAP', id: 'write:4', triggerId: null },
-      { type: 'Immediate', id: 'immediate:1', triggerId: 'tcp:2' },
-      { type: 'Immediate', id: 'immediate:2', triggerId: 'tcp:3' } ]
+        id: 'tcpconnect:1', triggerAsyncId: 'tcp:1' },
+      { type: 'TCPWRAP', id: 'tcp:2', triggerAsyncId: 'tcpserver:1' },
+      { type: 'TLSWRAP', id: 'tls:2', triggerAsyncId: 'tcpserver:1' },
+      { type: 'Immediate', id: 'immediate:1', triggerAsyncId: 'tcp:2' },
+      { type: 'Immediate', id: 'immediate:2', triggerAsyncId: 'tcp:1' },
+    ]
   );
 }

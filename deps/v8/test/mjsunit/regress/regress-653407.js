@@ -2,25 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --ignition --turbo
+// Flags: --allow-natives-syntax
 
 // This is to test if 'this' gets correctly initialized when inlining
 // constructors in turbofan.
 
 class superClass {
-  constructor () {}
+  constructor() {}
 }
 
 class subClass extends superClass {
-  constructor () {
+  constructor() {
     super();
   }
 }
 
 function f() {
- new subClass();
-}
-
+  new subClass();
+};
+%PrepareFunctionForOptimization(f);
 f(); // We need this to collect feedback, so that subClass gets inlined in f.
-%OptimizeFunctionOnNextCall(f)
+%OptimizeFunctionOnNextCall(f);
 f();

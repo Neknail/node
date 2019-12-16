@@ -212,55 +212,61 @@ for (var lengthIndex = 0; lengthIndex < lengths.length; lengthIndex++) {
   function f() {
     return 'abc'.indexOf('a');
   }
+  %PrepareFunctionForOptimization(f);
   assertEquals(0, f());
   assertEquals(0, f());
   assertEquals(0, f());
-  % OptimizeFunctionOnNextCall(f);
+  %OptimizeFunctionOnNextCall(f);
   assertEquals(0, f());
 
   function f2() {
     return 'abc'.indexOf('a', 1);
   }
+  %PrepareFunctionForOptimization(f2);
   assertEquals(-1, f2());
   assertEquals(-1, f2());
   assertEquals(-1, f2());
-  % OptimizeFunctionOnNextCall(f2);
+  %OptimizeFunctionOnNextCall(f2);
   assertEquals(-1, f2());
 
   function f3() {
     return 'abc'.indexOf('a');
   }
+  %PrepareFunctionForOptimization(f3);
   assertEquals(0, f3());
   assertEquals(0, f3());
   assertEquals(0, f3());
-  % OptimizeFunctionOnNextCall(f3);
+  %OptimizeFunctionOnNextCall(f3);
   assertEquals(0, f3());
 
   function f4() {
     return 'abcbc'.indexOf('bc', 2);
   }
+  %PrepareFunctionForOptimization(f4);
   assertEquals(3, f4());
   assertEquals(3, f4());
   assertEquals(3, f4());
-  % OptimizeFunctionOnNextCall(f4);
+  %OptimizeFunctionOnNextCall(f4);
   assertEquals(3, f4());
 
   function f5() {
     return 'abcbc'.indexOf('b', -1);
   }
+  %PrepareFunctionForOptimization(f5);
   assertEquals(1, f5());
   assertEquals(1, f5());
   assertEquals(1, f5());
-  % OptimizeFunctionOnNextCall(f5);
+  %OptimizeFunctionOnNextCall(f5);
   assertEquals(1, f5());
 
   function f6() {
     return 'abcbc'.indexOf('b', -10737418);
   }
+  %PrepareFunctionForOptimization(f6);
   assertEquals(1, f6());
   assertEquals(1, f6());
   assertEquals(1, f6());
-  % OptimizeFunctionOnNextCall(f6);
+  %OptimizeFunctionOnNextCall(f6);
   assertEquals(1, f6());
 })();
 

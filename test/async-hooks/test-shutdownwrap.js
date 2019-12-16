@@ -24,11 +24,13 @@ let endedConnection = false;
 function onconnection(c) {
   assert.strictEqual(hooks.activitiesOfTypes('SHUTDOWNWRAP').length, 0);
   c.end();
-  endedConnection = true;
-  const as = hooks.activitiesOfTypes('SHUTDOWNWRAP');
-  assert.strictEqual(as.length, 1);
-  checkInvocations(as[0], { init: 1 }, 'after ending client connection');
-  this.close(onserverClosed);
+  process.nextTick(() => {
+    endedConnection = true;
+    const as = hooks.activitiesOfTypes('SHUTDOWNWRAP');
+    assert.strictEqual(as.length, 1);
+    checkInvocations(as[0], { init: 1 }, 'after ending client connection');
+    this.close(onserverClosed);
+  });
 }
 
 function onconnected() {
@@ -55,7 +57,7 @@ function onexit() {
   const a = as[0];
   assert.strictEqual(a.type, 'SHUTDOWNWRAP');
   assert.strictEqual(typeof a.uid, 'number');
-  assert.strictEqual(typeof a.triggerId, 'number');
+  assert.strictEqual(typeof a.triggerAsyncId, 'number');
   checkInvocations(as[0], { init: 1, before: 1, after: 1, destroy: 1 },
                    'when process exits');
 }

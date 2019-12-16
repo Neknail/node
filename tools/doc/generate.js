@@ -21,74 +21,101 @@
 
 'use strict';
 
-const processIncludes = require('./preprocess.js');
-const fs = require('fs');
+const { promises: fs } = require('fs');
+const path = require('path');
+const unified = require('unified');
+const markdown = require('remark-parse');
+const remark2rehype = require('remark-rehype');
+const raw = require('rehype-raw');
+const htmlStringify = require('rehype-stringify');
 
-// parse the args.
-// Don't use nopt or whatever for this.  It's simple enough.
+const { replaceLinks } = require('./markdown');
+const linksMapper = require('./links-mapper');
+const html = require('./html');
+const json = require('./json');
+
+// Parse the args.
+// Don't use nopt or whatever for this. It's simple enough.
 
 const args = process.argv.slice(2);
-let format = 'json';
-let template = null;
-let inputFile = null;
+let filename = null;
 let nodeVersion = null;
-let analytics = null;
+let outputDir = null;
+let apilinks = {};
 
-args.forEach(function(arg) {
-  if (!arg.startsWith('--')) {
-    inputFile = arg;
-  } else if (arg.startsWith('--format=')) {
-    format = arg.replace(/^--format=/, '');
-  } else if (arg.startsWith('--template=')) {
-    template = arg.replace(/^--template=/, '');
-  } else if (arg.startsWith('--node-version=')) {
-    nodeVersion = arg.replace(/^--node-version=/, '');
-  } else if (arg.startsWith('--analytics=')) {
-    analytics = arg.replace(/^--analytics=/, '');
+async function main() {
+  for (const arg of args) {
+    if (!arg.startsWith('--')) {
+      filename = arg;
+    } else if (arg.startsWith('--node-version=')) {
+      nodeVersion = arg.replace(/^--node-version=/, '');
+    } else if (arg.startsWith('--output-directory=')) {
+      outputDir = arg.replace(/^--output-directory=/, '');
+    } else if (arg.startsWith('--apilinks=')) {
+      const linkFile = arg.replace(/^--apilinks=/, '');
+      const data = await fs.readFile(linkFile, 'utf8');
+      if (!data.trim()) {
+        throw new Error(`${linkFile} is empty`);
+      }
+      apilinks = JSON.parse(data);
+    }
   }
-});
 
-nodeVersion = nodeVersion || process.version;
+  nodeVersion = nodeVersion || process.version;
 
-if (!inputFile) {
-  throw new Error('No input file specified');
+  if (!filename) {
+    throw new Error('No input file specified');
+  } else if (!outputDir) {
+    throw new Error('No output directory specified');
+  }
+
+  const input = await fs.readFile(filename, 'utf8');
+
+  const content = await unified()
+    .use(replaceLinks, { filename, linksMapper })
+    .use(markdown)
+    .use(html.preprocessText)
+    .use(json.jsonAPI, { filename })
+    .use(html.firstHeader)
+    .use(html.preprocessElements, { filename })
+    .use(html.buildToc, { filename, apilinks })
+    .use(remark2rehype, { allowDangerousHTML: true })
+    .use(raw)
+    .use(htmlStringify)
+    .process(input);
+
+  const myHtml = await html.toHTML({ input, content, filename, nodeVersion });
+  const basename = path.basename(filename, '.md');
+  const htmlTarget = path.join(outputDir, `${basename}.html`);
+  const jsonTarget = path.join(outputDir, `${basename}.json`);
+
+  return Promise.allSettled([
+    fs.writeFile(htmlTarget, myHtml),
+    fs.writeFile(jsonTarget, JSON.stringify(content.json, null, 2)),
+  ]);
 }
 
-console.error('Input file = %s', inputFile);
-fs.readFile(inputFile, 'utf8', function(er, input) {
-  if (er) throw er;
-  // process the input for @include lines
-  processIncludes(inputFile, input, next);
-});
+main()
+  .then((tasks) => {
+    // Filter rejected tasks
+    const errors = tasks.filter(({ status }) => status === 'rejected')
+      .map(({ reason }) => reason);
 
-function next(er, input) {
-  if (er) throw er;
-  switch (format) {
-    case 'json':
-      require('./json.js')(input, inputFile, function(er, obj) {
-        console.log(JSON.stringify(obj, null, 2));
-        if (er) throw er;
-      });
-      break;
+    // Log errors
+    for (const error of errors) {
+      console.error(error);
+    }
 
-    case 'html':
-      require('./html.js')(
-        {
-          input: input,
-          filename: inputFile,
-          template: template,
-          nodeVersion: nodeVersion,
-          analytics: analytics,
-        },
+    // Exit process with code 1 if some errors
+    if (errors.length > 0) {
+      return process.exit(1);
+    }
 
-        function(er, html) {
-          if (er) throw er;
-          console.log(html);
-        }
-      );
-      break;
+    // Else with code 0
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error(error);
 
-    default:
-      throw new Error('Invalid format: ' + format);
-  }
-}
+    process.exit(1);
+  });

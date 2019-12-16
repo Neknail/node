@@ -4,12 +4,6 @@
  */
 'use strict';
 
-const path = require('path');
-const utilsPath = path.join(__dirname, '..', 'eslint', 'lib', 'ast-utils.js');
-const astUtils = require(utilsPath);
-const getLocationFromRangeIndex = astUtils.getLocationFromRangeIndex;
-const getRangeIndexFromLocation = astUtils.getRangeIndexFromLocation;
-
 //------------------------------------------------------------------------------
 // Rule Definition
 //------------------------------------------------------------------------------
@@ -17,48 +11,27 @@ const getRangeIndexFromLocation = astUtils.getRangeIndexFromLocation;
 module.exports = function(context) {
   const sourceCode = context.getSourceCode();
   const regexpStack = [];
-  var regexpBuffer = [];
-  var inRegExp = false;
-
-  var getLocFromIndex;
-  if (typeof sourceCode.getLocFromIndex === 'function') {
-    getLocFromIndex = function(index) {
-      return sourceCode.getLocFromIndex(index);
-    };
-  } else {
-    getLocFromIndex = function(index) {
-      return getLocationFromRangeIndex(sourceCode, index);
-    };
-  }
-
-  var getIndexFromLoc;
-  if (typeof sourceCode.getIndexFromLoc === 'function') {
-    getIndexFromLoc = function(loc) {
-      return sourceCode.getIndexFromLoc(loc);
-    };
-  } else {
-    getIndexFromLoc = function(loc) {
-      return getRangeIndexFromLocation(sourceCode, loc);
-    };
-  }
+  let regexpBuffer = [];
+  let inRegExp = false;
 
   function report(node, startOffset) {
+    const indexOfDot = sourceCode.getIndexFromLoc(node.loc.start) + startOffset;
     context.report({
       node,
-      loc: getLocFromIndex(getIndexFromLoc(node.loc.start) + startOffset),
+      loc: sourceCode.getLocFromIndex(indexOfDot),
       message: 'Unescaped dot character in regular expression'
     });
   }
 
   const allowedModifiers = ['+', '*', '?', '{'];
   function checkRegExp(nodes) {
-    var escaping = false;
-    var inCharClass = false;
-    for (var n = 0; n < nodes.length; ++n) {
+    let escaping = false;
+    let inCharClass = false;
+    for (let n = 0; n < nodes.length; ++n) {
       const pair = nodes[n];
       const node = pair[0];
       const str = pair[1];
-      for (var i = 0; i < str.length; ++i) {
+      for (let i = 0; i < str.length; ++i) {
         switch (str[i]) {
           case '[':
             if (!escaping)
@@ -123,7 +96,7 @@ module.exports = function(context) {
                         node.quasis.length);
     if (inRegExp &&
         (isTemplate || (typeof node.value === 'string' && node.value.length))) {
-      var p = node.parent;
+      let p = node.parent;
       while (p && p.type === 'BinaryExpression') {
         p = p.parent;
       }
@@ -132,7 +105,7 @@ module.exports = function(context) {
           p.callee.name === 'RegExp') {
         if (isTemplate) {
           const quasis = node.quasis;
-          for (var i = 0; i < quasis.length; ++i) {
+          for (let i = 0; i < quasis.length; ++i) {
             const el = quasis[i];
             if (el.type === 'TemplateElement' && el.value && el.value.cooked)
               regexpBuffer.push([el, el.value.cooked]);
@@ -147,10 +120,10 @@ module.exports = function(context) {
   }
 
   return {
-    TemplateLiteral: checkLiteral,
-    Literal: checkLiteral,
-    CallExpression: checkRegExpStart,
-    NewExpression: checkRegExpStart,
+    'TemplateLiteral': checkLiteral,
+    'Literal': checkLiteral,
+    'CallExpression': checkRegExpStart,
+    'NewExpression': checkRegExpStart,
     'CallExpression:exit': checkRegExpEnd,
     'NewExpression:exit': checkRegExpEnd
   };

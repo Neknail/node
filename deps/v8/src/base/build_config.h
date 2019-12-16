@@ -21,7 +21,7 @@
 #elif defined(_M_IX86) || defined(__i386__)
 #define V8_HOST_ARCH_IA32 1
 #define V8_HOST_ARCH_32_BIT 1
-#elif defined(__AARCH64EL__)
+#elif defined(__AARCH64EL__) || defined(_M_ARM64)
 #define V8_HOST_ARCH_ARM64 1
 #define V8_HOST_ARCH_64_BIT 1
 #elif defined(__ARMEL__)
@@ -76,14 +76,14 @@
 // Target architecture detection. This may be set externally. If not, detect
 // in the same way as the host architecture, that is, target the native
 // environment as presented by the compiler.
-#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_X87 &&   \
-    !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_MIPS && \
-    !V8_TARGET_ARCH_MIPS64 && !V8_TARGET_ARCH_PPC && !V8_TARGET_ARCH_S390
+#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM &&      \
+    !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_MIPS && !V8_TARGET_ARCH_MIPS64 && \
+    !V8_TARGET_ARCH_PPC && !V8_TARGET_ARCH_S390
 #if defined(_M_X64) || defined(__x86_64__)
 #define V8_TARGET_ARCH_X64 1
 #elif defined(_M_IX86) || defined(__i386__)
 #define V8_TARGET_ARCH_IA32 1
-#elif defined(__AARCH64EL__)
+#elif defined(__AARCH64EL__) || defined(_M_ARM64)
 #define V8_TARGET_ARCH_ARM64 1
 #elif defined(__ARMEL__)
 #define V8_TARGET_ARCH_ARM 1
@@ -91,6 +91,8 @@
 #define V8_TARGET_ARCH_MIPS64 1
 #elif defined(__MIPSEB__) || defined(__MIPSEL__)
 #define V8_TARGET_ARCH_MIPS 1
+#elif defined(_ARCH_PPC)
+#define V8_TARGET_ARCH_PPC 1
 #else
 #error Target architecture was not detected as supported by v8
 #endif
@@ -127,8 +129,6 @@
 #else
 #define V8_TARGET_ARCH_32_BIT 1
 #endif
-#elif V8_TARGET_ARCH_X87
-#define V8_TARGET_ARCH_32_BIT 1
 #else
 #error Unknown target architecture pointer size
 #endif
@@ -179,8 +179,8 @@
 #else
 #define V8_TARGET_LITTLE_ENDIAN 1
 #endif
-#elif V8_TARGET_ARCH_X87
-#define V8_TARGET_LITTLE_ENDIAN 1
+#elif __BIG_ENDIAN__  // FOR PPCGR on AIX
+#define V8_TARGET_BIG_ENDIAN 1
 #elif V8_TARGET_ARCH_PPC_LE
 #define V8_TARGET_LITTLE_ENDIAN 1
 #elif V8_TARGET_ARCH_PPC_BE
@@ -195,15 +195,18 @@
 #error Unknown target architecture endianness
 #endif
 
-#if defined(V8_TARGET_ARCH_IA32) || defined(V8_TARGET_ARCH_X64) || \
-    defined(V8_TARGET_ARCH_X87)
-#define V8_TARGET_ARCH_STORES_RETURN_ADDRESS_ON_STACK 1
+#if defined(V8_TARGET_ARCH_IA32) || defined(V8_TARGET_ARCH_X64)
+#define V8_TARGET_ARCH_STORES_RETURN_ADDRESS_ON_STACK true
 #else
-#define V8_TARGET_ARCH_STORES_RETURN_ADDRESS_ON_STACK 0
+#define V8_TARGET_ARCH_STORES_RETURN_ADDRESS_ON_STACK false
 #endif
 
-// Number of bits to represent the page size for paged spaces. The value of 20
-// gives 1Mb bytes per page.
+// Number of bits to represent the page size for paged spaces.
+#if defined(V8_TARGET_ARCH_PPC) || defined(V8_TARGET_ARCH_PPC64)
+// PPC has large (64KB) physical pages.
 const int kPageSizeBits = 19;
+#else
+const int kPageSizeBits = 18;
+#endif
 
 #endif  // V8_BASE_BUILD_CONFIG_H_

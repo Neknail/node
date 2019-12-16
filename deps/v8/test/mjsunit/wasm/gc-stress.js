@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --expose-wasm  --stress-gc
+// Flags: --expose-wasm --gc-interval=500 --stress-compaction
 
-load("test/mjsunit/wasm/wasm-constants.js");
 load("test/mjsunit/wasm/wasm-module-builder.js");
 
 function run(f) {
@@ -12,7 +11,7 @@ function run(f) {
   builder.addImport("m", "f", kSig_i_i);
   builder.addFunction("main", kSig_i_i)
     .addBody([
-      kExprGetLocal, 0,
+      kExprLocalGet, 0,
       kExprCallFunction, 0])
     .exportAs("main");
 
@@ -30,8 +29,8 @@ function run(f) {
 }
 
 (function test() {
-  for (var i = 0; i < 100; i++) {
-    run(x => (x + 19));
+  for (var i = 0; i < 10; i++) {
+    run(x => (x + 19 + i));
     run(x => (x - 18));
   }
 })();

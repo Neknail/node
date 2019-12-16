@@ -20,7 +20,7 @@
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 'use strict';
-require('../common');
+const common = require('../common');
 const assert = require('assert');
 let bufsize = 0;
 
@@ -30,7 +30,7 @@ switch (process.argv[2]) {
   case 'child':
     return child();
   default:
-    throw new Error('wtf?');
+    throw new Error('invalid');
 }
 
 function parent() {
@@ -43,10 +43,10 @@ function parent() {
   child.stdout.on('data', function(c) {
     n += c;
   });
-  child.stdout.on('end', function() {
+  child.stdout.on('end', common.mustCall(function() {
     assert.strictEqual(+n, sent);
     console.log('ok');
-  });
+  }));
 
   // Write until the buffer fills up.
   let buf;
@@ -56,14 +56,14 @@ function parent() {
     sent += bufsize;
   } while (child.stdin.write(buf));
 
-  // then write a bunch more times.
+  // Then write a bunch more times.
   for (let i = 0; i < 100; i++) {
     const buf = Buffer.alloc(bufsize, '.');
     sent += bufsize;
     child.stdin.write(buf);
   }
 
-  // now end, before it's all flushed.
+  // Now end, before it's all flushed.
   child.stdin.end();
 
   // now we wait...

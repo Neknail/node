@@ -25,7 +25,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --allow-natives-syntax --crankshaft --no-always-opt
+// Flags: --allow-natives-syntax --opt --no-always-opt
 
 // Verifies that the KeyedStoreIC correctly handles out-of-bounds stores
 // to an array that grow it by a single element. Test functions are
@@ -197,6 +197,7 @@ assertEquals(0.5, array_store_1([], 0, 0.5));
     a[b] = c;
   }
 
+  %PrepareFunctionForOptimization(grow_store);
   a = new Array(1);
   grow_store(a,1,1);
   grow_store(a,2,1);
@@ -216,6 +217,7 @@ assertEquals(0.5, array_store_1([], 0, 0.5));
   function f(o, k, v) {
     o[k] = v;
   }
+  %PrepareFunctionForOptimization(f);
 
   a = [3.5];
   f(a, 1, "hi");  // DOUBLE packed array -> tagged packed grow
@@ -238,6 +240,7 @@ assertEquals(0.5, array_store_1([], 0, 0.5));
   function f(o, k, v) {
     o[k] = v;
   }
+  %PrepareFunctionForOptimization(f);
 
   a = [3.5];
   f(a, 0, "hi");  // DOUBLE packed array -> tagged packed grow

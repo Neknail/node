@@ -21,19 +21,61 @@
 
 'use strict';
 const common = require('../common');
-const fixturesDir = common.fixturesDir;
+const fixtures = require('../common/fixtures');
 const assert = require('assert');
+const { builtinModules } = require('module');
 const path = require('path');
 
 assert.strictEqual(
-    path.join(__dirname, '../fixtures/a.js').toLowerCase(),
-    require.resolve('../fixtures/a').toLowerCase());
+  require.resolve(fixtures.path('a')).toLowerCase(),
+  fixtures.path('a.js').toLowerCase());
 assert.strictEqual(
-    path.join(fixturesDir, 'a.js').toLowerCase(),
-    require.resolve(path.join(fixturesDir, 'a')).toLowerCase());
-assert.strictEqual(
-    path.join(fixturesDir, 'nested-index', 'one', 'index.js').toLowerCase(),
-    require.resolve('../fixtures/nested-index/one').toLowerCase());
-assert.strictEqual('path', require.resolve('path'));
+  require.resolve(fixtures.path('nested-index', 'one')).toLowerCase(),
+  fixtures.path('nested-index', 'one', 'index.js').toLowerCase());
+assert.strictEqual(require.resolve('path'), 'path');
 
-console.log('ok');
+// Test configurable resolve() paths.
+require(fixtures.path('require-resolve.js'));
+require(fixtures.path('resolve-paths', 'default', 'verify-paths.js'));
+
+const re = /^The "request" argument must be of type string\. Received type \w+$/;
+[1, false, null, undefined, {}].forEach((value) => {
+  common.expectsError(
+    () => { require.resolve(value); },
+    {
+      code: 'ERR_INVALID_ARG_TYPE',
+      message: re
+    });
+
+  common.expectsError(
+    () => { require.resolve.paths(value); },
+    {
+      code: 'ERR_INVALID_ARG_TYPE',
+      message: re
+    });
+});
+
+// Test require.resolve.paths.
+{
+  // builtinModules.
+  builtinModules.forEach((mod) => {
+    assert.strictEqual(require.resolve.paths(mod), null);
+  });
+
+  // node_modules.
+  const resolvedPaths = require.resolve.paths('eslint');
+  assert.strictEqual(Array.isArray(resolvedPaths), true);
+  assert.strictEqual(resolvedPaths[0].includes('node_modules'), true);
+
+  // relativeModules.
+  const relativeModules = ['.', '..', './foo', '../bar'];
+  relativeModules.forEach((mod) => {
+    const resolvedPaths = require.resolve.paths(mod);
+    assert.strictEqual(Array.isArray(resolvedPaths), true);
+    assert.strictEqual(resolvedPaths.length, 1);
+    assert.strictEqual(resolvedPaths[0], path.dirname(__filename));
+
+    // Shouldn't look up relative modules from 'node_modules'.
+    assert.strictEqual(resolvedPaths.includes('/node_modules'), false);
+  });
+}

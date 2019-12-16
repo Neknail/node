@@ -7,6 +7,10 @@ prefix sequential
 [true] # This section applies to all platforms
 
 [$system==win32]
+# https://github.com/nodejs/node/issues/22327
+test-http2-large-file: PASS, FLAKY
+# https://github.com/nodejs/node/issues/26401
+test-worker-prof: PASS, FLAKY
 
 [$system==linux]
 
@@ -17,3 +21,7 @@ prefix sequential
 [$system==freebsd]
 
 [$system==aix]
+# https://github.com/nodejs/node/pull/29054
+test-buffer-creation-regression: SKIP
+
+[$arch==arm]

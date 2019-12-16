@@ -2,12 +2,33 @@
 
 const common = require('../common');
 const stream = require('stream');
-const assert = require('assert');
 
-const readable = new stream.Readable({
-  read: common.noop
-});
+function testPushArg(val) {
+  const readable = new stream.Readable({
+    read: () => {}
+  });
+  readable.on('error', common.expectsError({
+    code: 'ERR_INVALID_ARG_TYPE',
+    type: TypeError
+  }));
+  readable.push(val);
+}
 
-assert.throws(() => readable.push([]), /Invalid non-string\/buffer chunk/);
-assert.throws(() => readable.push({}), /Invalid non-string\/buffer chunk/);
-assert.throws(() => readable.push(0), /Invalid non-string\/buffer chunk/);
+testPushArg([]);
+testPushArg({});
+testPushArg(0);
+
+function testUnshiftArg(val) {
+  const readable = new stream.Readable({
+    read: () => {}
+  });
+  readable.on('error', common.expectsError({
+    code: 'ERR_INVALID_ARG_TYPE',
+    type: TypeError
+  }));
+  readable.unshift(val);
+}
+
+testUnshiftArg([]);
+testUnshiftArg({});
+testUnshiftArg(0);

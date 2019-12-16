@@ -20,20 +20,22 @@
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 'use strict';
-const common = require('../common');
+require('../common');
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
 
-const file = path.join(common.tmpDir, 'write.txt');
+const tmpdir = require('../common/tmpdir');
 
-common.refreshTmpDir();
+const file = path.join(tmpdir.path, 'write.txt');
+
+tmpdir.refresh();
 
 const stream = fs.WriteStream(file);
 const _fs_close = fs.close;
 const _fs_open = fs.open;
 
-// change the fs.open with an identical function after the WriteStream
+// Change the fs.open with an identical function after the WriteStream
 // has pushed it onto its internal action queue, but before it's
 // returned.  This simulates AOP-style extension of the fs lib.
 fs.open = function() {
@@ -44,6 +46,7 @@ fs.close = function(fd) {
   assert.ok(fd, 'fs.close must not be called with an undefined fd.');
   fs.close = _fs_close;
   fs.open = _fs_open;
+  fs.closeSync(fd);
 };
 
 stream.write('foo');

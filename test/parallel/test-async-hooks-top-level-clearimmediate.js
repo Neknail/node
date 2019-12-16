@@ -6,14 +6,17 @@ const common = require('../common');
 const assert = require('assert');
 const async_hooks = require('async_hooks');
 
+if (!common.isMainThread)
+  common.skip('Worker bootstrapping works differently -> different async IDs');
+
 let seenId, seenResource;
 
 async_hooks.createHook({
-  init: common.mustCall((id, provider, triggerId, resource) => {
+  init: common.mustCall((id, provider, triggerAsyncId, resource) => {
     seenId = id;
     seenResource = resource;
     assert.strictEqual(provider, 'Immediate');
-    assert.strictEqual(triggerId, 1);
+    assert.strictEqual(triggerAsyncId, 1);
   }),
   before: common.mustNotCall(),
   after: common.mustNotCall(),

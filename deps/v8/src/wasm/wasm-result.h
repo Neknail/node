@@ -2,99 +2,119 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef V8_WASM_RESULT_H_
-#define V8_WASM_RESULT_H_
+#ifndef V8_WASM_WASM_RESULT_H_
+#define V8_WASM_WASM_RESULT_H_
 
 #include <cstdarg>
 #include <memory>
 
 #include "src/base/compiler-specific.h"
-#include "src/utils.h"
+#include "src/base/macros.h"
+#include "src/base/platform/platform.h"
 
-#include "src/handles.h"
-#include "src/globals.h"
+#include "src/common/globals.h"
 
 namespace v8 {
 namespace internal {
 
 class Isolate;
+template <typename T>
+class Handle;
 
 namespace wasm {
 
-// The overall result of decoding a function or a module.
+class V8_EXPORT_PRIVATE WasmError {
+ public:
+  WasmError() = default;
+
+  WasmError(uint32_t offset, std::string message)
+      : offset_(offset), message_(std::move(message)) {
+    // The error message must not be empty, otherwise {empty()} would be true.
+    DCHECK(!message_.empty());
+  }
+
+  PRINTF_FORMAT(3, 4)
+  WasmError(uint32_t offset, const char* format, ...) : offset_(offset) {
+    va_list args;
+    va_start(args, format);
+    message_ = FormatError(format, args);
+    va_end(args);
+    // The error message must not be empty, otherwise {empty()} would be true.
+    DCHECK(!message_.empty());
+  }
+
+  bool empty() const { return message_.empty(); }
+  bool has_error() const { return !message_.empty(); }
+
+  uint32_t offset() const { return offset_; }
+  const std::string& message() const& { return message_; }
+  std::string&& message() && { return std::move(message_); }
+
+ protected:
+  static std::string FormatError(const char* format, va_list args);
+
+ private:
+  uint32_t offset_ = 0;
+  std::string message_;
+};
+
+// Either a result of type T, or a WasmError.
 template <typename T>
 class Result {
  public:
   Result() = default;
 
   template <typename S>
-  explicit Result(S&& value) : val(value) {}
+  explicit Result(S&& value) : value_(std::forward<S>(value)) {}
 
   template <typename S>
-  Result(Result<S>&& other)
-      : val(std::move(other.val)),
-        error_offset(other.error_offset),
-        error_msg(std::move(other.error_msg)) {}
+  Result(Result<S>&& other) V8_NOEXCEPT : value_(std::move(other.value_)),
+                                          error_(std::move(other.error_)) {}
 
-  Result& operator=(Result&& other) = default;
+  explicit Result(WasmError error) : error_(std::move(error)) {}
 
-  T val = T{};
-  uint32_t error_offset = 0;
-  std::string error_msg;
-
-  bool ok() const { return error_msg.empty(); }
-  bool failed() const { return !ok(); }
-
-  template <typename V>
-  void MoveErrorFrom(Result<V>& that) {
-    error_offset = that.error_offset;
-    // Use {swap()} + {clear()} instead of move assign, as {that} might still be
-    // used afterwards.
-    error_msg.swap(that.error_msg);
-    that.error_msg.clear();
+  template <typename S>
+  Result& operator=(Result<S>&& other) V8_NOEXCEPT {
+    value_ = std::move(other.value_);
+    error_ = std::move(other.error_);
+    return *this;
   }
 
-  void PRINTF_FORMAT(2, 3) error(const char* format, ...) {
-    va_list args;
-    va_start(args, format);
-    verror(format, args);
-    va_end(args);
-  }
+  bool ok() const { return error_.empty(); }
+  bool failed() const { return error_.has_error(); }
+  const WasmError& error() const& { return error_; }
+  WasmError&& error() && { return std::move(error_); }
 
-  void PRINTF_FORMAT(2, 0) verror(const char* format, va_list args) {
-    size_t len = base::bits::RoundUpToPowerOfTwo32(
-        static_cast<uint32_t>(strlen(format)));
-    // Allocate increasingly large buffers until the message fits.
-    for (;; len *= 2) {
-      DCHECK_GE(kMaxInt, len);
-      error_msg.resize(len);
-      int written =
-          VSNPrintF(Vector<char>(&error_msg.front(), static_cast<int>(len)),
-                    format, args);
-      if (written < 0) continue;              // not enough space.
-      if (written == 0) error_msg = "Error";  // assign default message.
-      return;
-    }
+  // Accessor for the value. Returns const reference if {this} is l-value or
+  // const, and returns r-value reference if {this} is r-value. This allows to
+  // extract non-copyable values like {std::unique_ptr} by using
+  // {std::move(result).value()}.
+  const T& value() const & {
+    DCHECK(ok());
+    return value_;
   }
-
-  static Result<T> PRINTF_FORMAT(1, 2) Error(const char* format, ...) {
-    va_list args;
-    va_start(args, format);
-    Result<T> result;
-    result.verror(format, args);
-    va_end(args);
-    return result;
+  T&& value() && {
+    DCHECK(ok());
+    return std::move(value_);
   }
 
  private:
+  template <typename S>
+  friend class Result;
+
+  T value_ = T{};
+  WasmError error_;
+
   DISALLOW_COPY_AND_ASSIGN(Result);
 };
 
 // A helper for generating error messages that bubble up to JS exceptions.
 class V8_EXPORT_PRIVATE ErrorThrower {
  public:
-  ErrorThrower(i::Isolate* isolate, const char* context)
+  ErrorThrower(Isolate* isolate, const char* context)
       : isolate_(isolate), context_(context) {}
+  // Explicitly allow move-construction. Disallow copy (below).
+  ErrorThrower(ErrorThrower&& other) V8_NOEXCEPT;
   ~ErrorThrower();
 
   PRINTF_FORMAT(2, 3) void TypeError(const char* fmt, ...);
@@ -103,33 +123,58 @@ class V8_EXPORT_PRIVATE ErrorThrower {
   PRINTF_FORMAT(2, 3) void LinkError(const char* fmt, ...);
   PRINTF_FORMAT(2, 3) void RuntimeError(const char* fmt, ...);
 
-  template <typename T>
-  void CompileFailed(const char* error, Result<T>& result) {
-    DCHECK(result.failed());
-    CompileError("%s: %s @+%u", error, result.error_msg.c_str(),
-                 result.error_offset);
+  void CompileFailed(const WasmError& error) {
+    DCHECK(error.has_error());
+    CompileError("%s @+%u", error.message().c_str(), error.offset());
   }
 
-  i::Handle<i::Object> Reify() {
-    i::Handle<i::Object> result = exception_;
-    exception_ = i::Handle<i::Object>::null();
-    return result;
-  }
+  // Create and return exception object.
+  V8_WARN_UNUSED_RESULT Handle<Object> Reify();
 
-  bool error() const { return !exception_.is_null(); }
-  bool wasm_error() { return wasm_error_; }
+  // Reset any error which was set on this thrower.
+  void Reset();
+
+  bool error() const { return error_type_ != kNone; }
+  bool wasm_error() { return error_type_ >= kFirstWasmError; }
+  const char* error_msg() { return error_msg_.c_str(); }
+
+  Isolate* isolate() const { return isolate_; }
 
  private:
-  void Format(i::Handle<i::JSFunction> constructor, const char* fmt, va_list);
+  enum ErrorType {
+    kNone,
+    // General errors.
+    kTypeError,
+    kRangeError,
+    // Wasm errors.
+    kCompileError,
+    kLinkError,
+    kRuntimeError,
 
-  i::Isolate* isolate_;
+    // Marker.
+    kFirstWasmError = kCompileError
+  };
+
+  void Format(ErrorType error_type_, const char* fmt, va_list);
+
+  Isolate* isolate_;
   const char* context_;
-  i::Handle<i::Object> exception_;
-  bool wasm_error_ = false;
+  ErrorType error_type_ = kNone;
+  std::string error_msg_;
+
+  // ErrorThrower should always be stack-allocated, since it constitutes a scope
+  // (things happen in the destructor).
+  DISALLOW_NEW_AND_DELETE()
+  DISALLOW_COPY_AND_ASSIGN(ErrorThrower);
 };
+
+// Use {nullptr_t} as data value to indicate that this only stores the error,
+// but no result value (the only valid value is {nullptr}).
+// [Storing {void} would require template specialization.]
+using VoidResult = Result<std::nullptr_t>;
 
 }  // namespace wasm
 }  // namespace internal
 }  // namespace v8
 
-#endif
+#endif  // V8_WASM_WASM_RESULT_H_

@@ -2,17 +2,20 @@
 
 const common = require('../common');
 const assert = require('assert');
-const tick = require('./tick');
+const tick = require('../common/tick');
 const initHooks = require('./init-hooks');
 const { checkInvocations } = require('./hook-checks');
 const dns = require('dns');
+
+if (!common.isMainThread)
+  common.skip('Worker bootstrapping works differently -> different async IDs');
 
 const hooks = initHooks();
 
 hooks.enable();
 dns.lookup('www.google.com', 4, common.mustCall(onlookup));
-function onlookup(err_, ip, family) {
-  // we don't care about the error here in order to allow
+function onlookup() {
+  // We don't care about the error here in order to allow
   // tests to run offline (lookup will fail in that case and the err be set);
 
   const as = hooks.activitiesOfTypes('GETADDRINFOREQWRAP');
@@ -21,7 +24,7 @@ function onlookup(err_, ip, family) {
   const a = as[0];
   assert.strictEqual(a.type, 'GETADDRINFOREQWRAP');
   assert.strictEqual(typeof a.uid, 'number');
-  assert.strictEqual(a.triggerId, 1);
+  assert.strictEqual(a.triggerAsyncId, 1);
   checkInvocations(a, { init: 1, before: 1 }, 'while in onlookup callback');
   tick(2);
 }

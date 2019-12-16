@@ -5,9 +5,11 @@
 #include "src/builtins/builtins-async-gen.h"
 #include "src/builtins/builtins-utils-gen.h"
 #include "src/builtins/builtins.h"
-#include "src/code-factory.h"
-#include "src/code-stub-assembler.h"
-#include "src/frames-inl.h"
+#include "src/codegen/code-factory.h"
+#include "src/codegen/code-stub-assembler.h"
+#include "src/execution/frames-inl.h"
+#include "src/objects/js-generator.h"
+#include "src/objects/js-promise.h"
 
 namespace v8 {
 namespace internal {
@@ -16,147 +18,147 @@ using compiler::Node;
 
 namespace {
 
-// Describe fields of Context associated with AsyncGeneratorAwait resume
-// closures.
-class AwaitContext {
- public:
-  enum Fields { kGeneratorSlot = Context::MIN_CONTEXT_SLOTS, kLength };
-};
-
 class AsyncGeneratorBuiltinsAssembler : public AsyncBuiltinsAssembler {
  public:
   explicit AsyncGeneratorBuiltinsAssembler(CodeAssemblerState* state)
       : AsyncBuiltinsAssembler(state) {}
 
-  inline Node* LoadGeneratorState(Node* const generator) {
-    return LoadObjectField(generator, JSGeneratorObject::kContinuationOffset);
+  inline TNode<Smi> LoadGeneratorState(
+      const TNode<JSGeneratorObject> generator) {
+    return LoadObjectField<Smi>(generator,
+                                JSGeneratorObject::kContinuationOffset);
   }
 
-  inline Node* IsGeneratorStateClosed(Node* const state) {
+  inline TNode<BoolT> IsGeneratorStateClosed(const TNode<Smi> state) {
     return SmiEqual(state, SmiConstant(JSGeneratorObject::kGeneratorClosed));
   }
-  inline Node* IsGeneratorClosed(Node* const generator) {
+  inline TNode<BoolT> IsGeneratorClosed(
+      const TNode<JSGeneratorObject> generator) {
     return IsGeneratorStateClosed(LoadGeneratorState(generator));
   }
 
-  inline Node* IsGeneratorStateSuspended(Node* const state) {
+  inline TNode<BoolT> IsGeneratorStateSuspended(const TNode<Smi> state) {
     return SmiGreaterThanOrEqual(state, SmiConstant(0));
   }
 
-  inline Node* IsGeneratorSuspended(Node* const generator) {
+  inline TNode<BoolT> IsGeneratorSuspended(
+      const TNode<JSGeneratorObject> generator) {
     return IsGeneratorStateSuspended(LoadGeneratorState(generator));
   }
 
-  inline Node* IsGeneratorStateSuspendedAtStart(Node* const state) {
+  inline TNode<BoolT> IsGeneratorStateSuspendedAtStart(const TNode<Smi> state) {
     return SmiEqual(state, SmiConstant(0));
   }
 
-  inline Node* IsGeneratorStateNotExecuting(Node* const state) {
+  inline TNode<BoolT> IsGeneratorStateNotExecuting(const TNode<Smi> state) {
     return SmiNotEqual(state,
                        SmiConstant(JSGeneratorObject::kGeneratorExecuting));
   }
-  inline Node* IsGeneratorNotExecuting(Node* const generator) {
+  inline TNode<BoolT> IsGeneratorNotExecuting(
+      const TNode<JSGeneratorObject> generator) {
     return IsGeneratorStateNotExecuting(LoadGeneratorState(generator));
   }
 
-  inline Node* LoadGeneratorAwaitedPromise(Node* const generator) {
-    return LoadObjectField(generator,
-                           JSAsyncGeneratorObject::kAwaitedPromiseOffset);
+  inline TNode<BoolT> IsGeneratorAwaiting(
+      const TNode<JSGeneratorObject> generator) {
+    TNode<Object> is_generator_awaiting =
+        LoadObjectField(generator, JSAsyncGeneratorObject::kIsAwaitingOffset);
+    return TaggedEqual(is_generator_awaiting, SmiConstant(1));
   }
 
-  inline Node* IsGeneratorNotSuspendedForAwait(Node* const generator) {
-    return IsUndefined(LoadGeneratorAwaitedPromise(generator));
+  inline void SetGeneratorAwaiting(const TNode<JSGeneratorObject> generator) {
+    CSA_ASSERT(this, Word32BinaryNot(IsGeneratorAwaiting(generator)));
+    StoreObjectFieldNoWriteBarrier(
+        generator, JSAsyncGeneratorObject::kIsAwaitingOffset, SmiConstant(1));
+    CSA_ASSERT(this, IsGeneratorAwaiting(generator));
   }
 
-  inline Node* IsGeneratorSuspendedForAwait(Node* const generator) {
-    return HasInstanceType(LoadGeneratorAwaitedPromise(generator),
-                           JS_PROMISE_TYPE);
+  inline void SetGeneratorNotAwaiting(
+      const TNode<JSGeneratorObject> generator) {
+    CSA_ASSERT(this, IsGeneratorAwaiting(generator));
+    StoreObjectFieldNoWriteBarrier(
+        generator, JSAsyncGeneratorObject::kIsAwaitingOffset, SmiConstant(0));
+    CSA_ASSERT(this, Word32BinaryNot(IsGeneratorAwaiting(generator)));
   }
 
-  inline void ClearAwaitedPromise(Node* const generator) {
-    StoreObjectFieldRoot(generator,
-                         JSAsyncGeneratorObject::kAwaitedPromiseOffset,
-                         Heap::kUndefinedValueRootIndex);
-  }
-
-  inline void CloseGenerator(Node* const generator) {
+  inline void CloseGenerator(const TNode<JSGeneratorObject> generator) {
     StoreObjectFieldNoWriteBarrier(
         generator, JSGeneratorObject::kContinuationOffset,
         SmiConstant(JSGeneratorObject::kGeneratorClosed));
   }
 
-  inline Node* IsFastJSIterResult(Node* const value, Node* const context) {
-    CSA_ASSERT(this, TaggedIsNotSmi(value));
-    Node* const native_context = LoadNativeContext(context);
-    return WordEqual(
-        LoadMap(value),
-        LoadContextElement(native_context, Context::ITERATOR_RESULT_MAP_INDEX));
+  inline TNode<HeapObject> LoadFirstAsyncGeneratorRequestFromQueue(
+      const TNode<JSGeneratorObject> generator) {
+    return LoadObjectField<HeapObject>(generator,
+                                       JSAsyncGeneratorObject::kQueueOffset);
   }
 
-  inline Node* LoadFirstAsyncGeneratorRequestFromQueue(Node* const generator) {
-    return LoadObjectField(generator, JSAsyncGeneratorObject::kQueueOffset);
+  inline TNode<Smi> LoadResumeTypeFromAsyncGeneratorRequest(
+      const TNode<AsyncGeneratorRequest> request) {
+    return LoadObjectField<Smi>(request,
+                                AsyncGeneratorRequest::kResumeModeOffset);
   }
 
-  inline Node* LoadResumeTypeFromAsyncGeneratorRequest(Node* const request) {
-    return LoadObjectField(request, AsyncGeneratorRequest::kResumeModeOffset);
+  inline TNode<JSPromise> LoadPromiseFromAsyncGeneratorRequest(
+      const TNode<AsyncGeneratorRequest> request) {
+    return LoadObjectField<JSPromise>(request,
+                                      AsyncGeneratorRequest::kPromiseOffset);
   }
 
-  inline Node* LoadPromiseFromAsyncGeneratorRequest(Node* const request) {
-    return LoadObjectField(request, AsyncGeneratorRequest::kPromiseOffset);
-  }
-
-  inline Node* LoadValueFromAsyncGeneratorRequest(Node* const request) {
+  inline TNode<Object> LoadValueFromAsyncGeneratorRequest(
+      const TNode<AsyncGeneratorRequest> request) {
     return LoadObjectField(request, AsyncGeneratorRequest::kValueOffset);
   }
 
-  inline Node* IsAbruptResumeType(Node* const resume_type) {
+  inline TNode<BoolT> IsAbruptResumeType(const TNode<Smi> resume_type) {
     return SmiNotEqual(resume_type, SmiConstant(JSGeneratorObject::kNext));
   }
 
-  void AsyncGeneratorEnqueue(Node* context, Node* generator, Node* value,
+  void AsyncGeneratorEnqueue(CodeStubArguments* args, TNode<Context> context,
+                             TNode<Object> receiver, TNode<Object> value,
                              JSAsyncGeneratorObject::ResumeMode resume_mode,
                              const char* method_name);
 
-  Node* TakeFirstAsyncGeneratorRequestFromQueue(Node* generator);
-  Node* TakeFirstAsyncGeneratorRequestFromQueueIfPresent(Node* generator,
-                                                         Label* if_not_present);
-  void AddAsyncGeneratorRequestToQueue(Node* generator, Node* request);
+  TNode<AsyncGeneratorRequest> TakeFirstAsyncGeneratorRequestFromQueue(
+      TNode<JSAsyncGeneratorObject> generator);
+  void AddAsyncGeneratorRequestToQueue(TNode<JSAsyncGeneratorObject> generator,
+                                       TNode<AsyncGeneratorRequest> request);
 
-  Node* AllocateAsyncGeneratorRequest(
-      JSAsyncGeneratorObject::ResumeMode resume_mode, Node* resume_value,
-      Node* promise);
+  TNode<AsyncGeneratorRequest> AllocateAsyncGeneratorRequest(
+      JSAsyncGeneratorObject::ResumeMode resume_mode,
+      TNode<Object> resume_value, TNode<JSPromise> promise);
 
   // Shared implementation of the catchable and uncatchable variations of Await
   // for AsyncGenerators.
   template <typename Descriptor>
   void AsyncGeneratorAwait(bool is_catchable);
   void AsyncGeneratorAwaitResumeClosure(
-      Node* context, Node* value,
+      TNode<Context> context, TNode<Object> value,
       JSAsyncGeneratorObject::ResumeMode resume_mode);
 };
 
 // Shared implementation for the 3 Async Iterator protocol methods of Async
 // Generators.
 void AsyncGeneratorBuiltinsAssembler::AsyncGeneratorEnqueue(
-    Node* context, Node* generator, Node* value,
-    JSAsyncGeneratorObject::ResumeMode resume_mode, const char* method_name) {
+    CodeStubArguments* args, TNode<Context> context, TNode<Object> receiver,
+    TNode<Object> value, JSAsyncGeneratorObject::ResumeMode resume_mode,
+    const char* method_name) {
   // AsyncGeneratorEnqueue produces a new Promise, and appends it to the list
   // of async generator requests to be executed. If the generator is not
   // presently executing, then this method will loop through, processing each
   // request from front to back.
   // This loop resides in AsyncGeneratorResumeNext.
-  Node* promise = AllocateAndInitJSPromise(context);
+  TNode<JSPromise> promise = AllocateAndInitJSPromise(context);
 
-  Label enqueue(this), if_receiverisincompatible(this, Label::kDeferred);
+  Label if_receiverisincompatible(this, Label::kDeferred);
+  GotoIf(TaggedIsSmi(receiver), &if_receiverisincompatible);
+  GotoIfNot(HasInstanceType(CAST(receiver), JS_ASYNC_GENERATOR_OBJECT_TYPE),
+            &if_receiverisincompatible);
 
-  GotoIf(TaggedIsSmi(generator), &if_receiverisincompatible);
-  Branch(HasInstanceType(generator, JS_ASYNC_GENERATOR_OBJECT_TYPE), &enqueue,
-         &if_receiverisincompatible);
-
-  BIND(&enqueue);
   {
     Label done(this);
-    Node* const req =
+    const TNode<JSAsyncGeneratorObject> generator = CAST(receiver);
+    const TNode<AsyncGeneratorRequest> req =
         AllocateAsyncGeneratorRequest(resume_mode, value, promise);
 
     AddAsyncGeneratorRequestToQueue(generator, req);
@@ -165,7 +167,7 @@ void AsyncGeneratorBuiltinsAssembler::AsyncGeneratorEnqueue(
     // If state is not "executing", then
     //     Perform AsyncGeneratorResumeNext(Generator)
     // Check if the {receiver} is running or already closed.
-    Node* continuation = LoadGeneratorState(generator);
+    TNode<Smi> continuation = LoadGeneratorState(generator);
 
     GotoIf(SmiEqual(continuation,
                     SmiConstant(JSAsyncGeneratorObject::kGeneratorExecuting)),
@@ -175,27 +177,25 @@ void AsyncGeneratorBuiltinsAssembler::AsyncGeneratorEnqueue(
 
     Goto(&done);
     BIND(&done);
-    Return(promise);
+    args->PopAndReturn(promise);
   }
 
   BIND(&if_receiverisincompatible);
   {
-    Node* const error =
-        MakeTypeError(MessageTemplate::kIncompatibleMethodReceiver, context,
-                      CStringConstant(method_name), generator);
-
-    CallBuiltin(Builtins::kRejectNativePromise, context, promise, error,
+    CallBuiltin(Builtins::kRejectPromise, context, promise,
+                MakeTypeError(MessageTemplate::kIncompatibleMethodReceiver,
+                              context, StringConstant(method_name), receiver),
                 TrueConstant());
-    Return(promise);
+    args->PopAndReturn(promise);
   }
 }
 
-Node* AsyncGeneratorBuiltinsAssembler::AllocateAsyncGeneratorRequest(
-    JSAsyncGeneratorObject::ResumeMode resume_mode, Node* resume_value,
-    Node* promise) {
-  CSA_SLOW_ASSERT(this, HasInstanceType(promise, JS_PROMISE_TYPE));
-  Node* request = Allocate(AsyncGeneratorRequest::kSize);
-  StoreMapNoWriteBarrier(request, Heap::kAsyncGeneratorRequestMapRootIndex);
+TNode<AsyncGeneratorRequest>
+AsyncGeneratorBuiltinsAssembler::AllocateAsyncGeneratorRequest(
+    JSAsyncGeneratorObject::ResumeMode resume_mode, TNode<Object> resume_value,
+    TNode<JSPromise> promise) {
+  TNode<HeapObject> request = Allocate(AsyncGeneratorRequest::kSize);
+  StoreMapNoWriteBarrier(request, RootIndex::kAsyncGeneratorRequestMap);
   StoreObjectFieldNoWriteBarrier(request, AsyncGeneratorRequest::kNextOffset,
                                  UndefinedConstant());
   StoreObjectFieldNoWriteBarrier(request,
@@ -206,81 +206,59 @@ Node* AsyncGeneratorBuiltinsAssembler::AllocateAsyncGeneratorRequest(
   StoreObjectFieldNoWriteBarrier(request, AsyncGeneratorRequest::kPromiseOffset,
                                  promise);
   StoreObjectFieldRoot(request, AsyncGeneratorRequest::kNextOffset,
-                       Heap::kUndefinedValueRootIndex);
-  return request;
+                       RootIndex::kUndefinedValue);
+  return CAST(request);
 }
 
 void AsyncGeneratorBuiltinsAssembler::AsyncGeneratorAwaitResumeClosure(
-    Node* context, Node* value,
+    TNode<Context> context, TNode<Object> value,
     JSAsyncGeneratorObject::ResumeMode resume_mode) {
-  Node* const generator =
-      LoadContextElement(context, AwaitContext::kGeneratorSlot);
-  CSA_SLOW_ASSERT(this,
-                  HasInstanceType(generator, JS_ASYNC_GENERATOR_OBJECT_TYPE));
+  const TNode<JSAsyncGeneratorObject> generator =
+      CAST(LoadContextElement(context, Context::EXTENSION_INDEX));
 
-#if defined(DEBUG) && defined(ENABLE_SLOW_DCHECKS)
-  Node* const awaited_promise = LoadGeneratorAwaitedPromise(generator);
-  CSA_SLOW_ASSERT(this, HasInstanceType(awaited_promise, JS_PROMISE_TYPE));
-  CSA_SLOW_ASSERT(this, SmiNotEqual(LoadObjectField(awaited_promise,
-                                                    JSPromise::kStatusOffset),
-                                    SmiConstant(v8::Promise::kPending)));
-#endif
-
-  ClearAwaitedPromise(generator);
+  SetGeneratorNotAwaiting(generator);
 
   CSA_SLOW_ASSERT(this, IsGeneratorSuspended(generator));
 
-  CallStub(CodeFactory::ResumeGenerator(isolate()), context, value, generator,
-           SmiConstant(resume_mode),
-           SmiConstant(static_cast<int>(SuspendFlags::kAsyncGeneratorAwait)));
+  // Remember the {resume_mode} for the {generator}.
+  StoreObjectFieldNoWriteBarrier(generator,
+                                 JSGeneratorObject::kResumeModeOffset,
+                                 SmiConstant(resume_mode));
 
-  TailCallStub(CodeFactory::AsyncGeneratorResumeNext(isolate()), context,
-               generator);
+  CallStub(CodeFactory::ResumeGenerator(isolate()), context, value, generator);
+
+  TailCallBuiltin(Builtins::kAsyncGeneratorResumeNext, context, generator);
 }
 
 template <typename Descriptor>
 void AsyncGeneratorBuiltinsAssembler::AsyncGeneratorAwait(bool is_catchable) {
-  Node* generator = Parameter(1);
-  Node* value = Parameter(2);
-  Node* context = Parameter(5);
+  TNode<JSAsyncGeneratorObject> async_generator_object =
+      CAST(Parameter(Descriptor::kAsyncGeneratorObject));
+  TNode<Object> value = CAST(Parameter(Descriptor::kValue));
+  TNode<Context> context = CAST(Parameter(Descriptor::kContext));
 
-  CSA_SLOW_ASSERT(this,
-                  HasInstanceType(generator, JS_ASYNC_GENERATOR_OBJECT_TYPE));
-
-  Node* const request = LoadFirstAsyncGeneratorRequestFromQueue(generator);
-  CSA_ASSERT(this, WordNotEqual(request, UndefinedConstant()));
-
-  NodeGenerator1 closure_context = [&](Node* native_context) -> Node* {
-    Node* const context =
-        CreatePromiseContext(native_context, AwaitContext::kLength);
-    StoreContextElementNoWriteBarrier(context, AwaitContext::kGeneratorSlot,
-                                      generator);
-    return context;
-  };
-
-  Node* outer_promise =
-      LoadObjectField(request, AsyncGeneratorRequest::kPromiseOffset);
+  TNode<AsyncGeneratorRequest> request =
+      CAST(LoadFirstAsyncGeneratorRequestFromQueue(async_generator_object));
+  TNode<JSPromise> outer_promise = LoadObjectField<JSPromise>(
+      request, AsyncGeneratorRequest::kPromiseOffset);
 
   const int resolve_index = Context::ASYNC_GENERATOR_AWAIT_RESOLVE_SHARED_FUN;
   const int reject_index = Context::ASYNC_GENERATOR_AWAIT_REJECT_SHARED_FUN;
 
-  Node* promise =
-      Await(context, generator, value, outer_promise, closure_context,
-            resolve_index, reject_index, is_catchable);
-
-  CSA_SLOW_ASSERT(this, IsGeneratorNotSuspendedForAwait(generator));
-  StoreObjectField(generator, JSAsyncGeneratorObject::kAwaitedPromiseOffset,
-                   promise);
+  SetGeneratorAwaiting(async_generator_object);
+  Await(context, async_generator_object, value, outer_promise, resolve_index,
+        reject_index, is_catchable);
   Return(UndefinedConstant());
 }
 
 void AsyncGeneratorBuiltinsAssembler::AddAsyncGeneratorRequestToQueue(
-    Node* generator, Node* request) {
-  VARIABLE(var_current, MachineRepresentation::kTagged);
+    TNode<JSAsyncGeneratorObject> generator,
+    TNode<AsyncGeneratorRequest> request) {
+  TVARIABLE(HeapObject, var_current);
   Label empty(this), loop(this, &var_current), done(this);
 
-  var_current.Bind(
-      LoadObjectField(generator, JSAsyncGeneratorObject::kQueueOffset));
+  var_current = LoadObjectField<HeapObject>(
+      generator, JSAsyncGeneratorObject::kQueueOffset);
   Branch(IsUndefined(var_current.value()), &empty, &loop);
 
   BIND(&empty);
@@ -292,8 +270,9 @@ void AsyncGeneratorBuiltinsAssembler::AddAsyncGeneratorRequestToQueue(
   BIND(&loop);
   {
     Label loop_next(this), next_empty(this);
-    Node* current = var_current.value();
-    Node* next = LoadObjectField(current, AsyncGeneratorRequest::kNextOffset);
+    TNode<AsyncGeneratorRequest> current = CAST(var_current.value());
+    TNode<HeapObject> next = LoadObjectField<HeapObject>(
+        current, AsyncGeneratorRequest::kNextOffset);
 
     Branch(IsUndefined(next), &next_empty, &loop_next);
     BIND(&next_empty);
@@ -304,23 +283,23 @@ void AsyncGeneratorBuiltinsAssembler::AddAsyncGeneratorRequestToQueue(
 
     BIND(&loop_next);
     {
-      var_current.Bind(next);
+      var_current = next;
       Goto(&loop);
     }
   }
   BIND(&done);
 }
 
-Node* AsyncGeneratorBuiltinsAssembler::TakeFirstAsyncGeneratorRequestFromQueue(
-    Node* generator) {
+TNode<AsyncGeneratorRequest>
+AsyncGeneratorBuiltinsAssembler::TakeFirstAsyncGeneratorRequestFromQueue(
+    TNode<JSAsyncGeneratorObject> generator) {
   // Removes and returns the first AsyncGeneratorRequest from a
   // JSAsyncGeneratorObject's queue. Asserts that the queue is not empty.
-  CSA_ASSERT(this, HasInstanceType(generator, JS_ASYNC_GENERATOR_OBJECT_TYPE));
-  Node* request =
-      LoadObjectField(generator, JSAsyncGeneratorObject::kQueueOffset);
-  CSA_ASSERT(this, WordNotEqual(request, UndefinedConstant()));
+  TNode<AsyncGeneratorRequest> request = LoadObjectField<AsyncGeneratorRequest>(
+      generator, JSAsyncGeneratorObject::kQueueOffset);
 
-  Node* next = LoadObjectField(request, AsyncGeneratorRequest::kNextOffset);
+  TNode<Object> next =
+      LoadObjectField(request, AsyncGeneratorRequest::kNextOffset);
 
   StoreObjectField(generator, JSAsyncGeneratorObject::kQueueOffset, next);
   return request;
@@ -330,10 +309,17 @@ Node* AsyncGeneratorBuiltinsAssembler::TakeFirstAsyncGeneratorRequestFromQueue(
 // https://tc39.github.io/proposal-async-iteration/
 // Section #sec-asyncgenerator-prototype-next
 TF_BUILTIN(AsyncGeneratorPrototypeNext, AsyncGeneratorBuiltinsAssembler) {
-  Node* const generator = Parameter(Descriptor::kReceiver);
-  Node* const value = Parameter(Descriptor::kValue);
-  Node* const context = Parameter(Descriptor::kContext);
-  AsyncGeneratorEnqueue(context, generator, value,
+  const int kValueArg = 0;
+
+  TNode<IntPtrT> argc =
+      ChangeInt32ToIntPtr(Parameter(Descriptor::kJSActualArgumentsCount));
+  CodeStubArguments args(this, argc);
+
+  TNode<Object> generator = args.GetReceiver();
+  TNode<Object> value = args.GetOptionalArgumentValue(kValueArg);
+  TNode<Context> context = CAST(Parameter(Descriptor::kContext));
+
+  AsyncGeneratorEnqueue(&args, context, generator, value,
                         JSAsyncGeneratorObject::kNext,
                         "[AsyncGenerator].prototype.next");
 }
@@ -341,10 +327,17 @@ TF_BUILTIN(AsyncGeneratorPrototypeNext, AsyncGeneratorBuiltinsAssembler) {
 // https://tc39.github.io/proposal-async-iteration/
 // Section #sec-asyncgenerator-prototype-return
 TF_BUILTIN(AsyncGeneratorPrototypeReturn, AsyncGeneratorBuiltinsAssembler) {
-  Node* generator = Parameter(Descriptor::kReceiver);
-  Node* value = Parameter(Descriptor::kValue);
-  Node* context = Parameter(Descriptor::kContext);
-  AsyncGeneratorEnqueue(context, generator, value,
+  const int kValueArg = 0;
+
+  TNode<IntPtrT> argc =
+      ChangeInt32ToIntPtr(Parameter(Descriptor::kJSActualArgumentsCount));
+  CodeStubArguments args(this, argc);
+
+  TNode<Object> generator = args.GetReceiver();
+  TNode<Object> value = args.GetOptionalArgumentValue(kValueArg);
+  TNode<Context> context = CAST(Parameter(Descriptor::kContext));
+
+  AsyncGeneratorEnqueue(&args, context, generator, value,
                         JSAsyncGeneratorObject::kReturn,
                         "[AsyncGenerator].prototype.return");
 }
@@ -352,86 +345,31 @@ TF_BUILTIN(AsyncGeneratorPrototypeReturn, AsyncGeneratorBuiltinsAssembler) {
 // https://tc39.github.io/proposal-async-iteration/
 // Section #sec-asyncgenerator-prototype-throw
 TF_BUILTIN(AsyncGeneratorPrototypeThrow, AsyncGeneratorBuiltinsAssembler) {
-  Node* generator = Parameter(Descriptor::kReceiver);
-  Node* value = Parameter(Descriptor::kValue);
-  Node* context = Parameter(Descriptor::kContext);
-  AsyncGeneratorEnqueue(context, generator, value,
+  const int kValueArg = 0;
+
+  TNode<IntPtrT> argc =
+      ChangeInt32ToIntPtr(Parameter(Descriptor::kJSActualArgumentsCount));
+  CodeStubArguments args(this, argc);
+
+  TNode<Object> generator = args.GetReceiver();
+  TNode<Object> value = args.GetOptionalArgumentValue(kValueArg);
+  TNode<Context> context = CAST(Parameter(Descriptor::kContext));
+
+  AsyncGeneratorEnqueue(&args, context, generator, value,
                         JSAsyncGeneratorObject::kThrow,
                         "[AsyncGenerator].prototype.throw");
 }
 
-TF_BUILTIN(AsyncGeneratorYield, AsyncGeneratorBuiltinsAssembler) {
-  Node* const generator = Parameter(Descriptor::kReceiver);
-  Node* const value = Parameter(Descriptor::kValue);
-  Node* const context = Parameter(Descriptor::kContext);
-
-  CSA_ASSERT_JS_ARGC_EQ(this, 1);
-  CSA_SLOW_ASSERT(this,
-                  HasInstanceType(generator, JS_ASYNC_GENERATOR_OBJECT_TYPE));
-  CSA_ASSERT(this, IsGeneratorNotSuspendedForAwait(generator));
-
-  CallBuiltin(Builtins::kAsyncGeneratorResolve, context, generator, value,
-              FalseConstant());
-
-  // Yield must have been reached via ResumeNext(), so don't recursively call
-  // it.
-  Return(UndefinedConstant());
-}
-
-TF_BUILTIN(AsyncGeneratorRawYield, AsyncGeneratorBuiltinsAssembler) {
-  Node* const generator = Parameter(Descriptor::kReceiver);
-  Node* const iter_result = Parameter(Descriptor::kValue);
-  Node* const context = Parameter(Descriptor::kContext);
-
-  CSA_ASSERT_JS_ARGC_EQ(this, 1);
-  CSA_SLOW_ASSERT(this,
-                  HasInstanceType(generator, JS_ASYNC_GENERATOR_OBJECT_TYPE));
-  CSA_ASSERT(this, IsGeneratorNotSuspendedForAwait(generator));
-
-  VARIABLE(var_value, MachineRepresentation::kTagged);
-  VARIABLE(var_done, MachineRepresentation::kTagged);
-
-  // RawYield is used for yield*, and values sent to yield* are always
-  // iterator result objects.
-  Label if_slow(this), async_generator_resolve(this);
-
-  GotoIfNot(IsFastJSIterResult(context, iter_result), &if_slow);
-  var_value.Bind(LoadObjectField(iter_result, JSIteratorResult::kValueOffset));
-  var_done.Bind(LoadObjectField(iter_result, JSIteratorResult::kDoneOffset));
-  Goto(&async_generator_resolve);
-
-  BIND(&if_slow);
-  {
-    var_value.Bind(
-        GetProperty(context, iter_result, factory()->value_string()));
-    Node* const done =
-        GetProperty(context, iter_result, factory()->done_string());
-
-    var_done.Bind(Select(
-        IsBoolean(done), [=]() { return done; },
-        [=]() { return CallBuiltin(Builtins::kToBoolean, context, done); },
-        MachineRepresentation::kTagged));
-    Goto(&async_generator_resolve);
-  }
-
-  BIND(&async_generator_resolve);
-  Node* const value = var_value.value();
-  Node* const done = var_done.value();
-  CallBuiltin(Builtins::kAsyncGeneratorResolve, context, generator, value,
-              done);
-  Return(UndefinedConstant());
-}
-
 TF_BUILTIN(AsyncGeneratorAwaitResolveClosure, AsyncGeneratorBuiltinsAssembler) {
-  Node* value = Parameter(Descriptor::kValue);
-  Node* context = Parameter(Descriptor::kContext);
+  TNode<Object> value = CAST(Parameter(Descriptor::kValue));
+  TNode<Context> context = CAST(Parameter(Descriptor::kContext));
   AsyncGeneratorAwaitResumeClosure(context, value,
                                    JSAsyncGeneratorObject::kNext);
 }
 
 TF_BUILTIN(AsyncGeneratorAwaitRejectClosure, AsyncGeneratorBuiltinsAssembler) {
-  Node* value = Parameter(Descriptor::kValue);
-  Node* context = Parameter(Descriptor::kContext);
+  TNode<Object> value = CAST(Parameter(Descriptor::kValue));
+  TNode<Context> context = CAST(Parameter(Descriptor::kContext));
   AsyncGeneratorAwaitResumeClosure(context, value,
                                    JSAsyncGeneratorObject::kThrow);
 }
@@ -447,9 +385,10 @@ TF_BUILTIN(AsyncGeneratorAwaitCaught, AsyncGeneratorBuiltinsAssembler) {
 }
 
 TF_BUILTIN(AsyncGeneratorResumeNext, AsyncGeneratorBuiltinsAssembler) {
-  typedef AsyncGeneratorResumeNextDescriptor Descriptor;
-  Node* const generator = Parameter(Descriptor::kGenerator);
-  Node* const context = Parameter(Descriptor::kContext);
+  using Descriptor = AsyncGeneratorResumeNextDescriptor;
+  const TNode<JSAsyncGeneratorObject> generator =
+      CAST(Parameter(Descriptor::kGenerator));
+  const TNode<Context> context = CAST(Parameter(Descriptor::kContext));
 
   // The penultimate step of proposal-async-iteration/#sec-asyncgeneratorresolve
   // and proposal-async-iteration/#sec-asyncgeneratorreject both recursively
@@ -459,54 +398,58 @@ TF_BUILTIN(AsyncGeneratorResumeNext, AsyncGeneratorBuiltinsAssembler) {
   // performs a loop in AsyncGeneratorResumeNext, which  continues as long as
   // there is an AsyncGeneratorRequest in the queue, and as long as the
   // generator is not suspended due to an AwaitExpression.
-  VARIABLE(var_state, MachineRepresentation::kTaggedSigned,
-           LoadGeneratorState(generator));
-  VARIABLE(var_next, MachineRepresentation::kTagged,
-           LoadFirstAsyncGeneratorRequestFromQueue(generator));
-  Variable* labels[] = {&var_state, &var_next};
-  Label start(this, 2, labels);
+  TVARIABLE(Smi, var_state, LoadGeneratorState(generator));
+  TVARIABLE(HeapObject, var_next,
+            LoadFirstAsyncGeneratorRequestFromQueue(generator));
+  Label start(this, {&var_state, &var_next});
   Goto(&start);
   BIND(&start);
 
   CSA_ASSERT(this, IsGeneratorNotExecuting(generator));
 
   // Stop resuming if suspended for Await.
-  ReturnIf(IsGeneratorSuspendedForAwait(generator), UndefinedConstant());
+  ReturnIf(IsGeneratorAwaiting(generator), UndefinedConstant());
 
   // Stop resuming if request queue is empty.
   ReturnIf(IsUndefined(var_next.value()), UndefinedConstant());
 
-  Node* const next = var_next.value();
-  Node* const resume_type = LoadResumeTypeFromAsyncGeneratorRequest(next);
+  const TNode<AsyncGeneratorRequest> next = CAST(var_next.value());
+  const TNode<Smi> resume_type = LoadResumeTypeFromAsyncGeneratorRequest(next);
 
   Label if_abrupt(this), if_normal(this), resume_generator(this);
   Branch(IsAbruptResumeType(resume_type), &if_abrupt, &if_normal);
   BIND(&if_abrupt);
   {
-    Label settle_promise(this), fulfill_promise(this), reject_promise(this);
+    Label settle_promise(this), if_return(this), if_throw(this);
     GotoIfNot(IsGeneratorStateSuspendedAtStart(var_state.value()),
               &settle_promise);
     CloseGenerator(generator);
-    var_state.Bind(SmiConstant(JSGeneratorObject::kGeneratorClosed));
-
+    var_state = SmiConstant(JSGeneratorObject::kGeneratorClosed);
     Goto(&settle_promise);
+
     BIND(&settle_promise);
-
-    GotoIfNot(IsGeneratorStateClosed(var_state.value()), &resume_generator);
-
+    TNode<Object> next_value = LoadValueFromAsyncGeneratorRequest(next);
     Branch(SmiEqual(resume_type, SmiConstant(JSGeneratorObject::kReturn)),
-           &fulfill_promise, &reject_promise);
+           &if_return, &if_throw);
 
-    BIND(&fulfill_promise);
-    CallBuiltin(Builtins::kAsyncGeneratorResolve, context, generator,
-                LoadValueFromAsyncGeneratorRequest(next), TrueConstant());
-    var_next.Bind(LoadFirstAsyncGeneratorRequestFromQueue(generator));
-    Goto(&start);
+    BIND(&if_return);
+    // For "return" completions, await the sent value. If the Await succeeds,
+    // and the generator is not closed, resume the generator with a "return"
+    // completion to allow `finally` blocks to be evaluated. Otherwise, perform
+    // AsyncGeneratorResolve(awaitedValue, true). If the await fails and the
+    // generator is not closed, resume the generator with a "throw" completion.
+    // If the generator was closed, perform AsyncGeneratorReject(thrownValue).
+    // In all cases, the last step is to call AsyncGeneratorResumeNext.
+    TNode<Object> is_caught = CallRuntime(
+        Runtime::kAsyncGeneratorHasCatchHandlerForPC, context, generator);
+    TailCallBuiltin(Builtins::kAsyncGeneratorReturn, context, generator,
+                    next_value, is_caught);
 
-    BIND(&reject_promise);
+    BIND(&if_throw);
+    GotoIfNot(IsGeneratorStateClosed(var_state.value()), &resume_generator);
     CallBuiltin(Builtins::kAsyncGeneratorReject, context, generator,
-                LoadValueFromAsyncGeneratorRequest(next));
-    var_next.Bind(LoadFirstAsyncGeneratorRequestFromQueue(generator));
+                next_value);
+    var_next = LoadFirstAsyncGeneratorRequestFromQueue(generator);
     Goto(&start);
   }
 
@@ -515,54 +458,245 @@ TF_BUILTIN(AsyncGeneratorResumeNext, AsyncGeneratorBuiltinsAssembler) {
     GotoIfNot(IsGeneratorStateClosed(var_state.value()), &resume_generator);
     CallBuiltin(Builtins::kAsyncGeneratorResolve, context, generator,
                 UndefinedConstant(), TrueConstant());
-    var_state.Bind(LoadGeneratorState(generator));
-    var_next.Bind(LoadFirstAsyncGeneratorRequestFromQueue(generator));
+    var_state = LoadGeneratorState(generator);
+    var_next = LoadFirstAsyncGeneratorRequestFromQueue(generator);
     Goto(&start);
   }
 
   BIND(&resume_generator);
   {
+    // Remember the {resume_type} for the {generator}.
+    StoreObjectFieldNoWriteBarrier(
+        generator, JSGeneratorObject::kResumeModeOffset, resume_type);
     CallStub(CodeFactory::ResumeGenerator(isolate()), context,
-             LoadValueFromAsyncGeneratorRequest(next), generator, resume_type,
-             SmiConstant(static_cast<int>(SuspendFlags::kAsyncGeneratorYield)));
-    var_state.Bind(LoadGeneratorState(generator));
-    var_next.Bind(LoadFirstAsyncGeneratorRequestFromQueue(generator));
+             LoadValueFromAsyncGeneratorRequest(next), generator);
+    var_state = LoadGeneratorState(generator);
+    var_next = LoadFirstAsyncGeneratorRequestFromQueue(generator);
     Goto(&start);
   }
 }
 
 TF_BUILTIN(AsyncGeneratorResolve, AsyncGeneratorBuiltinsAssembler) {
-  Node* const generator = Parameter(Descriptor::kGenerator);
-  Node* const value = Parameter(Descriptor::kValue);
-  Node* const done = Parameter(Descriptor::kDone);
-  Node* const context = Parameter(Descriptor::kContext);
+  const TNode<JSAsyncGeneratorObject> generator =
+      CAST(Parameter(Descriptor::kGenerator));
+  const TNode<Object> value = CAST(Parameter(Descriptor::kValue));
+  const TNode<Object> done = CAST(Parameter(Descriptor::kDone));
+  const TNode<Context> context = CAST(Parameter(Descriptor::kContext));
 
-  Node* const next = TakeFirstAsyncGeneratorRequestFromQueue(generator);
-  Node* const promise = LoadPromiseFromAsyncGeneratorRequest(next);
+  CSA_ASSERT(this, Word32BinaryNot(IsGeneratorAwaiting(generator)));
 
-  Node* const wrapper = AllocateAndInitJSPromise(context);
-  CallBuiltin(Builtins::kResolveNativePromise, context, wrapper, value);
+  // This operation should be called only when the `value` parameter has been
+  // Await-ed. Typically, this means `value` is not a JSPromise value. However,
+  // it may be a JSPromise value whose "then" method has been overridden to a
+  // non-callable value. This can't be checked with assertions due to being
+  // observable, but keep it in mind.
 
-  Node* const on_fulfilled =
-      CreateUnwrapClosure(LoadNativeContext(context), done);
+  const TNode<AsyncGeneratorRequest> next =
+      TakeFirstAsyncGeneratorRequestFromQueue(generator);
+  const TNode<JSPromise> promise = LoadPromiseFromAsyncGeneratorRequest(next);
+
+  // Let iteratorResult be CreateIterResultObject(value, done).
+  const TNode<HeapObject> iter_result = Allocate(JSIteratorResult::kSize);
+  {
+    TNode<Object> map = LoadContextElement(LoadNativeContext(context),
+                                           Context::ITERATOR_RESULT_MAP_INDEX);
+    StoreMapNoWriteBarrier(iter_result, map);
+    StoreObjectFieldRoot(iter_result, JSIteratorResult::kPropertiesOrHashOffset,
+                         RootIndex::kEmptyFixedArray);
+    StoreObjectFieldRoot(iter_result, JSIteratorResult::kElementsOffset,
+                         RootIndex::kEmptyFixedArray);
+    StoreObjectFieldNoWriteBarrier(iter_result, JSIteratorResult::kValueOffset,
+                                   value);
+    StoreObjectFieldNoWriteBarrier(iter_result, JSIteratorResult::kDoneOffset,
+                                   done);
+  }
+
+  // We know that {iter_result} itself doesn't have any "then" property (a
+  // freshly allocated IterResultObject only has "value" and "done" properties)
+  // and we also know that the [[Prototype]] of {iter_result} is the intrinsic
+  // %ObjectPrototype%. So we can skip the [[Resolve]] logic here completely
+  // and directly call into the FulfillPromise operation if we can prove
+  // that the %ObjectPrototype% also doesn't have any "then" property. This
+  // is guarded by the Promise#then() protector.
+  // If the PromiseHooks are enabled, we cannot take the shortcut here, since
+  // the "promiseResolve" hook would not be fired otherwise.
+  Label if_fast(this), if_slow(this, Label::kDeferred), return_promise(this);
+  GotoIfForceSlowPath(&if_slow);
+  GotoIf(IsPromiseHookEnabled(), &if_slow);
+  Branch(IsPromiseThenProtectorCellInvalid(), &if_slow, &if_fast);
+
+  BIND(&if_fast);
+  {
+    // Skip the "then" on {iter_result} and directly fulfill the {promise}
+    // with the {iter_result}.
+    CallBuiltin(Builtins::kFulfillPromise, context, promise, iter_result);
+    Goto(&return_promise);
+  }
+
+  BIND(&if_slow);
+  {
+    // Perform Call(promiseCapability.[[Resolve]], undefined, «iteratorResult»).
+    CallBuiltin(Builtins::kResolvePromise, context, promise, iter_result);
+    Goto(&return_promise);
+  }
 
   // Per spec, AsyncGeneratorResolve() returns undefined. However, for the
   // benefit of %TraceExit(), return the Promise.
-  Return(CallBuiltin(Builtins::kPerformNativePromiseThen, context, wrapper,
-                     on_fulfilled, UndefinedConstant(), promise));
+  BIND(&return_promise);
+  Return(promise);
 }
 
 TF_BUILTIN(AsyncGeneratorReject, AsyncGeneratorBuiltinsAssembler) {
-  typedef AsyncGeneratorRejectDescriptor Descriptor;
-  Node* const generator = Parameter(Descriptor::kGenerator);
-  Node* const value = Parameter(Descriptor::kValue);
-  Node* const context = Parameter(Descriptor::kContext);
+  using Descriptor = AsyncGeneratorRejectDescriptor;
+  const TNode<JSAsyncGeneratorObject> generator =
+      CAST(Parameter(Descriptor::kGenerator));
+  const TNode<Object> value = CAST(Parameter(Descriptor::kValue));
+  const TNode<Context> context = CAST(Parameter(Descriptor::kContext));
 
-  Node* const next = TakeFirstAsyncGeneratorRequestFromQueue(generator);
-  Node* const promise = LoadPromiseFromAsyncGeneratorRequest(next);
+  TNode<AsyncGeneratorRequest> next =
+      TakeFirstAsyncGeneratorRequestFromQueue(generator);
+  TNode<JSPromise> promise = LoadPromiseFromAsyncGeneratorRequest(next);
 
-  Return(CallBuiltin(Builtins::kRejectNativePromise, context, promise, value,
+  Return(CallBuiltin(Builtins::kRejectPromise, context, promise, value,
                      TrueConstant()));
+}
+
+TF_BUILTIN(AsyncGeneratorYield, AsyncGeneratorBuiltinsAssembler) {
+  const TNode<JSGeneratorObject> generator =
+      CAST(Parameter(Descriptor::kGenerator));
+  const TNode<Object> value = CAST(Parameter(Descriptor::kValue));
+  const TNode<Oddball> is_caught = CAST(Parameter(Descriptor::kIsCaught));
+  const TNode<Context> context = CAST(Parameter(Descriptor::kContext));
+
+  const TNode<AsyncGeneratorRequest> request =
+      CAST(LoadFirstAsyncGeneratorRequestFromQueue(generator));
+  const TNode<JSPromise> outer_promise =
+      LoadPromiseFromAsyncGeneratorRequest(request);
+
+  const int on_resolve = Context::ASYNC_GENERATOR_YIELD_RESOLVE_SHARED_FUN;
+  const int on_reject = Context::ASYNC_GENERATOR_AWAIT_REJECT_SHARED_FUN;
+
+  SetGeneratorAwaiting(generator);
+  Await(context, generator, value, outer_promise, on_resolve, on_reject,
+        is_caught);
+  Return(UndefinedConstant());
+}
+
+TF_BUILTIN(AsyncGeneratorYieldResolveClosure, AsyncGeneratorBuiltinsAssembler) {
+  const TNode<Context> context = CAST(Parameter(Descriptor::kContext));
+  const TNode<Object> value = CAST(Parameter(Descriptor::kValue));
+  const TNode<JSAsyncGeneratorObject> generator =
+      CAST(LoadContextElement(context, Context::EXTENSION_INDEX));
+
+  SetGeneratorNotAwaiting(generator);
+
+  // Per proposal-async-iteration/#sec-asyncgeneratoryield step 9
+  // Return ! AsyncGeneratorResolve(_F_.[[Generator]], _value_, *false*).
+  CallBuiltin(Builtins::kAsyncGeneratorResolve, context, generator, value,
+              FalseConstant());
+
+  TailCallBuiltin(Builtins::kAsyncGeneratorResumeNext, context, generator);
+}
+
+TF_BUILTIN(AsyncGeneratorReturn, AsyncGeneratorBuiltinsAssembler) {
+  // AsyncGeneratorReturn is called when resuming requests with "return" resume
+  // modes. It is similar to AsyncGeneratorAwait(), but selects different
+  // resolve/reject closures depending on whether or not the generator is marked
+  // as closed.
+  //
+  // In particular, non-closed generators will resume the generator with either
+  // "return" or "throw" resume modes, allowing finally blocks or catch blocks
+  // to be evaluated, as if the `await` were performed within the body of the
+  // generator. (per proposal-async-iteration/#sec-asyncgeneratoryield step 8.b)
+  //
+  // Closed generators do not resume the generator in the resolve/reject
+  // closures, but instead simply perform AsyncGeneratorResolve or
+  // AsyncGeneratorReject with the awaited value
+  // (per proposal-async-iteration/#sec-asyncgeneratorresumenext step 10.b.i)
+  //
+  // In all cases, the final step is to jump back to AsyncGeneratorResumeNext.
+  const TNode<JSGeneratorObject> generator =
+      CAST(Parameter(Descriptor::kGenerator));
+  const TNode<Object> value = CAST(Parameter(Descriptor::kValue));
+  const TNode<Oddball> is_caught = CAST(Parameter(Descriptor::kIsCaught));
+  const TNode<AsyncGeneratorRequest> req =
+      CAST(LoadFirstAsyncGeneratorRequestFromQueue(generator));
+
+  Label perform_await(this);
+  TVARIABLE(IntPtrT, var_on_resolve,
+            IntPtrConstant(
+                Context::ASYNC_GENERATOR_RETURN_CLOSED_RESOLVE_SHARED_FUN));
+  TVARIABLE(
+      IntPtrT, var_on_reject,
+      IntPtrConstant(Context::ASYNC_GENERATOR_RETURN_CLOSED_REJECT_SHARED_FUN));
+
+  const TNode<Smi> state = LoadGeneratorState(generator);
+  GotoIf(IsGeneratorStateClosed(state), &perform_await);
+  var_on_resolve =
+      IntPtrConstant(Context::ASYNC_GENERATOR_RETURN_RESOLVE_SHARED_FUN);
+  var_on_reject =
+      IntPtrConstant(Context::ASYNC_GENERATOR_AWAIT_REJECT_SHARED_FUN);
+  Goto(&perform_await);
+
+  BIND(&perform_await);
+
+  SetGeneratorAwaiting(generator);
+  TNode<Context> context = CAST(Parameter(Descriptor::kContext));
+  const TNode<JSPromise> outer_promise =
+      LoadPromiseFromAsyncGeneratorRequest(req);
+  Await(context, generator, value, outer_promise, var_on_resolve.value(),
+        var_on_reject.value(), is_caught);
+
+  Return(UndefinedConstant());
+}
+
+// On-resolve closure for Await in AsyncGeneratorReturn
+// Resume the generator with "return" resume_mode, and finally perform
+// AsyncGeneratorResumeNext. Per
+// proposal-async-iteration/#sec-asyncgeneratoryield step 8.e
+TF_BUILTIN(AsyncGeneratorReturnResolveClosure,
+           AsyncGeneratorBuiltinsAssembler) {
+  const TNode<Context> context = CAST(Parameter(Descriptor::kContext));
+  const TNode<Object> value = CAST(Parameter(Descriptor::kValue));
+  AsyncGeneratorAwaitResumeClosure(context, value, JSGeneratorObject::kReturn);
+}
+
+// On-resolve closure for Await in AsyncGeneratorReturn
+// Perform AsyncGeneratorResolve({awaited_value}, true) and finally perform
+// AsyncGeneratorResumeNext.
+TF_BUILTIN(AsyncGeneratorReturnClosedResolveClosure,
+           AsyncGeneratorBuiltinsAssembler) {
+  const TNode<Context> context = CAST(Parameter(Descriptor::kContext));
+  const TNode<Object> value = CAST(Parameter(Descriptor::kValue));
+  const TNode<JSAsyncGeneratorObject> generator =
+      CAST(LoadContextElement(context, Context::EXTENSION_INDEX));
+
+  SetGeneratorNotAwaiting(generator);
+
+  // https://tc39.github.io/proposal-async-iteration/
+  //    #async-generator-resume-next-return-processor-fulfilled step 2:
+  //  Return ! AsyncGeneratorResolve(_F_.[[Generator]], _value_, *true*).
+  CallBuiltin(Builtins::kAsyncGeneratorResolve, context, generator, value,
+              TrueConstant());
+
+  TailCallBuiltin(Builtins::kAsyncGeneratorResumeNext, context, generator);
+}
+
+TF_BUILTIN(AsyncGeneratorReturnClosedRejectClosure,
+           AsyncGeneratorBuiltinsAssembler) {
+  const TNode<Context> context = CAST(Parameter(Descriptor::kContext));
+  const TNode<Object> value = CAST(Parameter(Descriptor::kValue));
+  const TNode<JSAsyncGeneratorObject> generator =
+      CAST(LoadContextElement(context, Context::EXTENSION_INDEX));
+
+  SetGeneratorNotAwaiting(generator);
+
+  // https://tc39.github.io/proposal-async-iteration/
+  //    #async-generator-resume-next-return-processor-rejected step 2:
+  // Return ! AsyncGeneratorReject(_F_.[[Generator]], _reason_).
+  CallBuiltin(Builtins::kAsyncGeneratorReject, context, generator, value);
+
+  TailCallBuiltin(Builtins::kAsyncGeneratorResumeNext, context, generator);
 }
 
 }  // namespace internal

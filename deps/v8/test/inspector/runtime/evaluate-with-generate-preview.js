@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-InspectorTest.log("Tests that Runtime.evaluate will generate correct previews.");
+let {session, contextGroup, Protocol} = InspectorTest.start("Tests that Runtime.evaluate will generate correct previews.");
 
-InspectorTest.addScript(
+contextGroup.addScript(
 `
 var f1 = function(){};
 
@@ -61,11 +61,14 @@ Object.defineProperty(parentObj, 'propNotNamedProto', {
   get: deterministicNativeFunction,
   set: function() {}
 });
+inspector.allowAccessorFormatting(parentObj);
 var objInheritsGetterProperty = {__proto__: parentObj};
-allowAccessorFormatting(objInheritsGetterProperty);
+inspector.allowAccessorFormatting(objInheritsGetterProperty);
+
+var arrayWithLongValues = ["a".repeat(101), 2n**401n];
 `);
 
-InspectorTest.setupInjectedScriptEnvironment();
+contextGroup.setupInjectedScriptEnvironment();
 
 InspectorTest.runTestSuite([
   function testObjectPropertiesPreview(next)
@@ -141,6 +144,13 @@ InspectorTest.runTestSuite([
   function testObjWithArrayAsProto(next)
   {
     Protocol.Runtime.evaluate({ "expression": "Object.create([1,2])", "generatePreview": true })
+        .then(result => InspectorTest.logMessage(result.result.result.preview))
+        .then(next);
+  },
+
+  function testArrayWithLongValues(next)
+  {
+    Protocol.Runtime.evaluate({ "expression": "arrayWithLongValues", "generatePreview": true })
         .then(result => InspectorTest.logMessage(result.result.result.preview))
         .then(next);
   }

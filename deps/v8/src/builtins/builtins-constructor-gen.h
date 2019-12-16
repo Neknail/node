@@ -5,7 +5,7 @@
 #ifndef V8_BUILTINS_BUILTINS_CONSTRUCTOR_GEN_H_
 #define V8_BUILTINS_BUILTINS_CONSTRUCTOR_GEN_H_
 
-#include "src/code-stub-assembler.h"
+#include "src/codegen/code-stub-assembler.h"
 
 namespace v8 {
 namespace internal {
@@ -15,36 +15,37 @@ class ConstructorBuiltinsAssembler : public CodeStubAssembler {
   explicit ConstructorBuiltinsAssembler(compiler::CodeAssemblerState* state)
       : CodeStubAssembler(state) {}
 
-  Node* EmitFastNewClosure(Node* shared_info, Node* feedback_vector, Node* slot,
-                           Node* context);
-  Node* EmitFastNewFunctionContext(Node* closure, Node* slots, Node* context,
-                                   ScopeType scope_type);
+  TNode<Context> EmitFastNewFunctionContext(TNode<ScopeInfo> scope_info,
+                                            TNode<Uint32T> slots,
+                                            TNode<Context> context,
+                                            ScopeType scope_type);
 
-  Node* EmitFastCloneRegExp(Node* closure, Node* literal_index, Node* pattern,
-                            Node* flags, Node* context);
-  Node* EmitFastCloneShallowArray(Node* closure, Node* literal_index,
-                                  Node* context, Label* call_runtime,
-                                  AllocationSiteMode allocation_site_mode);
+  TNode<JSRegExp> EmitCreateRegExpLiteral(
+      TNode<HeapObject> maybe_feedback_vector, TNode<UintPtrT> slot,
+      TNode<Object> pattern, TNode<Smi> flags, TNode<Context> context);
 
-  void CreateFastCloneShallowArrayBuiltin(
+  TNode<JSArray> EmitCreateShallowArrayLiteral(
+      TNode<FeedbackVector> feedback_vector, TNode<UintPtrT> slot,
+      TNode<Context> context, Label* call_runtime,
       AllocationSiteMode allocation_site_mode);
 
-  Node* EmitFastCloneShallowObject(Label* call_runtime, Node* closure,
-                                   Node* literals_index,
-                                   Node* properties_count);
+  TNode<JSArray> EmitCreateEmptyArrayLiteral(
+      TNode<FeedbackVector> feedback_vector, TNode<UintPtrT> slot,
+      TNode<Context> context);
 
-  template <typename Descriptor>
-  void CreateFastCloneShallowObjectBuiltin(int properties_count);
+  TNode<HeapObject> EmitCreateShallowObjectLiteral(
+      TNode<FeedbackVector> feedback_vector, TNode<UintPtrT> slot,
+      Label* call_runtime);
+  TNode<JSObject> EmitCreateEmptyObjectLiteral(TNode<Context> context);
 
-  Node* EmitFastNewObject(Node* context, Node* target, Node* new_target);
+  TNode<JSObject> EmitFastNewObject(SloppyTNode<Context> context,
+                                    SloppyTNode<JSFunction> target,
+                                    SloppyTNode<JSReceiver> new_target);
 
-  Node* EmitFastNewObject(Node* context, Node* target, Node* new_target,
-                          Label* call_runtime);
-
- private:
-  Node* NonEmptyShallowClone(Node* boilerplate, Node* boilerplate_map,
-                             Node* boilerplate_elements, Node* allocation_site,
-                             Node* capacity, ElementsKind kind);
+  TNode<JSObject> EmitFastNewObject(SloppyTNode<Context> context,
+                                    SloppyTNode<JSFunction> target,
+                                    SloppyTNode<JSReceiver> new_target,
+                                    Label* call_runtime);
 };
 
 }  // namespace internal

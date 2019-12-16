@@ -8,7 +8,7 @@ var fs = require('fs')
 var path = require('path')
 var common = require('../common-tap.js')
 
-var testdir = path.resolve(__dirname, path.basename(__filename, '.js'))
+var testdir = common.pkg
 var modAtgz = path.resolve(testdir, 'modA') + '-1.0.0.tgz'
 var modB1tgz = path.resolve(testdir, 'modB') + '-1.0.0.tgz'
 var modB2tgz = path.resolve(testdir, 'modB') + '-2.0.0.tgz'
@@ -25,12 +25,10 @@ var fixture = new Tacks(Dir({
     dependencies: {
       modA: {
         version: '1.0.0',
-        from: 'modA',
         resolved: 'file://' + modAtgz
       },
       modB: {
         version: '1.0.0',
-        from: 'modB@1',
         resolved: 'file://' + modB1tgz
       }
     }
@@ -74,22 +72,18 @@ var newShrinkwrap = new Tacks(Dir({
     dependencies: {
       modA: {
         version: '1.0.0',
-        from: 'modA',
         resolved: 'file://' + modAtgz
       },
       modB: {
         version: '1.0.0',
-        from: 'modB@1',
         resolved: 'file://' + modB1tgz
       },
       modC: {
         version: '1.0.0',
-        from: 'modC',
         resolved: 'file://' + modCtgz,
         dependencies: {
           modB: {
             version: '1.0.0',
-            from: 'modB@1',
             resolved: 'file://' + modB1tgz
           }
         }

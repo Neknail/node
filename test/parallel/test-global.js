@@ -19,28 +19,59 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+// This test cannot run in strict mode because it tests that `baseFoo` is
+// treated as a global without being declared with `var`/`let`/`const`.
+
 /* eslint-disable strict */
 const common = require('../common');
-const path = require('path');
-const assert = require('assert');
+const fixtures = require('../common/fixtures');
 
-common.globalCheck = false;
+const assert = require('assert');
+const { builtinModules } = require('module');
+
+// Load all modules to actually cover most code parts.
+builtinModules.forEach((moduleName) => {
+  if (!moduleName.includes('/')) {
+    try {
+      // This could throw for e.g., crypto if the binary is not compiled
+      // accordingly.
+      require(moduleName);
+    } catch {}
+  }
+});
+
+{
+  const expected = [
+    'global',
+    'queueMicrotask',
+    'clearImmediate',
+    'clearInterval',
+    'clearTimeout',
+    'setImmediate',
+    'setInterval',
+    'setTimeout'
+  ];
+  assert.deepStrictEqual(new Set(Object.keys(global)), new Set(expected));
+}
+
+common.allowGlobals('bar', 'foo');
 
 baseFoo = 'foo'; // eslint-disable-line no-undef
 global.baseBar = 'bar';
 
-assert.strictEqual('foo', global.baseFoo,
-                   'x -> global.x in base level not working');
+assert.strictEqual(global.baseFoo, 'foo',
+                   `x -> global.x failed: global.baseFoo = ${global.baseFoo}`);
 
-assert.strictEqual('bar',
-                   baseBar, // eslint-disable-line no-undef
-                   'global.x -> x in base level not working');
+assert.strictEqual(baseBar, // eslint-disable-line no-undef
+                   'bar',
+                   // eslint-disable-next-line no-undef
+                   `global.x -> x failed: baseBar = ${baseBar}`);
 
-const mod = require(path.join(common.fixturesDir, 'global', 'plain'));
+const mod = require(fixtures.path('global', 'plain'));
 const fooBar = mod.fooBar;
 
-assert.strictEqual('foo', fooBar.foo, 'x -> global.x in sub level not working');
+assert.strictEqual(fooBar.foo, 'foo');
 
-assert.strictEqual('bar', fooBar.bar, 'global.x -> x in sub level not working');
+assert.strictEqual(fooBar.bar, 'bar');
 
 assert.strictEqual(Object.prototype.toString.call(global), '[object global]');

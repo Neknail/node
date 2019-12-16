@@ -2,20 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --crankshaft
+// Flags: --allow-natives-syntax --opt
 
 function foo(a, b) {
   return a + "0123456789012";
 }
 
+%PrepareFunctionForOptimization(foo);
 foo("a");
 foo("a");
 %OptimizeFunctionOnNextCall(foo);
 foo("a");
 
-var a = "a".repeat(268435440);
-assertThrows(function() { foo(a); });
+var a = "a".repeat(%StringMaxLength());
+assertThrows(function() { foo(a); }, RangeError);
 
+%PrepareFunctionForOptimization(foo);
 %OptimizeFunctionOnNextCall(foo);
-assertThrows(function() { foo(a); });
+assertThrows(function() { foo(a); }, RangeError);
 assertOptimized(foo);

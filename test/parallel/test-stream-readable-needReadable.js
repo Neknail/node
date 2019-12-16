@@ -4,7 +4,7 @@ const assert = require('assert');
 const Readable = require('stream').Readable;
 
 const readable = new Readable({
-  read: common.noop
+  read: () => {}
 });
 
 // Initialized to false.
@@ -28,7 +28,7 @@ readable.on('end', common.mustCall(() => {
 }));
 
 const asyncReadable = new Readable({
-  read: common.noop
+  read: () => {}
 });
 
 asyncReadable.on('readable', common.mustCall(() => {
@@ -38,7 +38,7 @@ asyncReadable.on('readable', common.mustCall(() => {
     // then we need to notify the reader on future changes.
     assert.strictEqual(asyncReadable._readableState.needReadable, true);
   }
-}, 3));
+}, 2));
 
 process.nextTick(common.mustCall(() => {
   asyncReadable.push('foooo');
@@ -46,12 +46,13 @@ process.nextTick(common.mustCall(() => {
 process.nextTick(common.mustCall(() => {
   asyncReadable.push('bar');
 }));
-process.nextTick(common.mustCall(() => {
+setImmediate(common.mustCall(() => {
   asyncReadable.push(null);
+  assert.strictEqual(asyncReadable._readableState.needReadable, false);
 }));
 
 const flowing = new Readable({
-  read: common.noop
+  read: () => {}
 });
 
 // Notice this must be above the on('data') call.
@@ -69,28 +70,30 @@ flowing.on('data', common.mustCall(function(data) {
 }, 3));
 
 const slowProducer = new Readable({
-  read: common.noop
+  read: () => {}
 });
 
 slowProducer.on('readable', common.mustCall(() => {
-  if (slowProducer.read(8) === null) {
+  const chunk = slowProducer.read(8);
+  const state = slowProducer._readableState;
+  if (chunk === null) {
     // The buffer doesn't have enough data, and the stream is not need,
     // we need to notify the reader when data arrives.
-    assert.strictEqual(slowProducer._readableState.needReadable, true);
+    assert.strictEqual(state.needReadable, true);
   } else {
-    assert.strictEqual(slowProducer._readableState.needReadable, false);
+    assert.strictEqual(state.needReadable, false);
   }
 }, 4));
 
 process.nextTick(common.mustCall(() => {
   slowProducer.push('foo');
-}));
-process.nextTick(common.mustCall(() => {
-  slowProducer.push('foo');
-}));
-process.nextTick(common.mustCall(() => {
-  slowProducer.push('foo');
-}));
-process.nextTick(common.mustCall(() => {
-  slowProducer.push(null);
+  process.nextTick(common.mustCall(() => {
+    slowProducer.push('foo');
+    process.nextTick(common.mustCall(() => {
+      slowProducer.push('foo');
+      process.nextTick(common.mustCall(() => {
+        slowProducer.push(null);
+      }));
+    }));
+  }));
 }));

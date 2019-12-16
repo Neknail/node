@@ -21,35 +21,33 @@
 
 'use strict';
 const common = require('../common');
-const assert = require('assert');
-
-if (!common.hasCrypto) {
+if (!common.hasCrypto)
   common.skip('missing crypto');
-  return;
-}
+
+const assert = require('assert');
 const tls = require('tls');
+const fixtures = require('../common/fixtures');
 
-const fs = require('fs');
-const path = require('path');
-
-const passKey = fs.readFileSync(path.join(common.fixturesDir, 'pass-key.pem'));
-const rawKey = fs.readFileSync(path.join(common.fixturesDir, 'raw-key.pem'));
-const cert = fs.readFileSync(path.join(common.fixturesDir, 'pass-cert.pem'));
+const passKey = fixtures.readKey('rsa_private_encrypted.pem');
+const rawKey = fixtures.readKey('rsa_private.pem');
+const cert = fixtures.readKey('rsa_cert.crt');
 
 assert(Buffer.isBuffer(passKey));
 assert(Buffer.isBuffer(cert));
 assert.strictEqual(typeof passKey.toString(), 'string');
 assert.strictEqual(typeof cert.toString(), 'string');
 
+function onSecureConnect() {
+  return common.mustCall(function() { this.end(); });
+}
+
 const server = tls.Server({
   key: passKey,
-  passphrase: 'passphrase',
+  passphrase: 'password',
   cert: cert,
   ca: [cert],
   requestCert: true,
   rejectUnauthorized: true
-}, function(s) {
-  s.end();
 });
 
 server.listen(0, common.mustCall(function() {
@@ -57,17 +55,17 @@ server.listen(0, common.mustCall(function() {
   tls.connect({
     port: this.address().port,
     key: passKey,
-    passphrase: 'passphrase',
+    passphrase: 'password',
     cert: cert,
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   tls.connect({
     port: this.address().port,
     key: rawKey,
     cert: cert,
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   tls.connect({
     port: this.address().port,
@@ -75,23 +73,23 @@ server.listen(0, common.mustCall(function() {
     passphrase: 'ignored',
     cert: cert,
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   // Buffer[]
   tls.connect({
     port: this.address().port,
     key: [passKey],
-    passphrase: 'passphrase',
+    passphrase: 'password',
     cert: [cert],
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   tls.connect({
     port: this.address().port,
     key: [rawKey],
     cert: [cert],
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   tls.connect({
     port: this.address().port,
@@ -99,23 +97,23 @@ server.listen(0, common.mustCall(function() {
     passphrase: 'ignored',
     cert: [cert],
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   // string
   tls.connect({
     port: this.address().port,
     key: passKey.toString(),
-    passphrase: 'passphrase',
+    passphrase: 'password',
     cert: cert.toString(),
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   tls.connect({
     port: this.address().port,
     key: rawKey.toString(),
     cert: cert.toString(),
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   tls.connect({
     port: this.address().port,
@@ -123,23 +121,23 @@ server.listen(0, common.mustCall(function() {
     passphrase: 'ignored',
     cert: cert.toString(),
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   // String[]
   tls.connect({
     port: this.address().port,
     key: [passKey.toString()],
-    passphrase: 'passphrase',
+    passphrase: 'password',
     cert: [cert.toString()],
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   tls.connect({
     port: this.address().port,
     key: [rawKey.toString()],
     cert: [cert.toString()],
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   tls.connect({
     port: this.address().port,
@@ -147,83 +145,85 @@ server.listen(0, common.mustCall(function() {
     passphrase: 'ignored',
     cert: [cert.toString()],
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   // Object[]
   tls.connect({
     port: this.address().port,
-    key: [{pem: passKey, passphrase: 'passphrase'}],
+    key: [{ pem: passKey, passphrase: 'password' }],
     cert: cert,
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   tls.connect({
     port: this.address().port,
-    key: [{pem: passKey, passphrase: 'passphrase'}],
+    key: [{ pem: passKey, passphrase: 'password' }],
     passphrase: 'ignored',
     cert: cert,
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   tls.connect({
     port: this.address().port,
-    key: [{pem: passKey}],
-    passphrase: 'passphrase',
+    key: [{ pem: passKey }],
+    passphrase: 'password',
     cert: cert,
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   tls.connect({
     port: this.address().port,
-    key: [{pem: passKey.toString(), passphrase: 'passphrase'}],
+    key: [{ pem: passKey.toString(), passphrase: 'password' }],
     cert: cert,
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   tls.connect({
     port: this.address().port,
-    key: [{pem: rawKey, passphrase: 'ignored'}],
+    key: [{ pem: rawKey, passphrase: 'ignored' }],
     cert: cert,
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   tls.connect({
     port: this.address().port,
-    key: [{pem: rawKey.toString(), passphrase: 'ignored'}],
+    key: [{ pem: rawKey.toString(), passphrase: 'ignored' }],
     cert: cert,
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   tls.connect({
     port: this.address().port,
-    key: [{pem: rawKey}],
+    key: [{ pem: rawKey }],
     passphrase: 'ignored',
     cert: cert,
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   tls.connect({
     port: this.address().port,
-    key: [{pem: rawKey.toString()}],
+    key: [{ pem: rawKey.toString() }],
     passphrase: 'ignored',
     cert: cert,
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   tls.connect({
     port: this.address().port,
-    key: [{pem: rawKey}],
+    key: [{ pem: rawKey }],
     cert: cert,
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 
   tls.connect({
     port: this.address().port,
-    key: [{pem: rawKey.toString()}],
+    key: [{ pem: rawKey.toString() }],
     cert: cert,
     rejectUnauthorized: false
-  }, common.mustCall());
+  }, onSecureConnect());
 })).unref();
+
+const errMessagePassword = /bad decrypt/;
 
 // Missing passphrase
 assert.throws(function() {
@@ -233,7 +233,7 @@ assert.throws(function() {
     cert: cert,
     rejectUnauthorized: false
   });
-}, /bad password read/);
+}, errMessagePassword);
 
 assert.throws(function() {
   tls.connect({
@@ -242,16 +242,18 @@ assert.throws(function() {
     cert: cert,
     rejectUnauthorized: false
   });
-}, /bad password read/);
+}, errMessagePassword);
 
 assert.throws(function() {
   tls.connect({
     port: server.address().port,
-    key: [{pem: passKey}],
+    key: [{ pem: passKey }],
     cert: cert,
     rejectUnauthorized: false
   });
-}, /bad password read/);
+}, errMessagePassword);
+
+const errMessageDecrypt = /bad decrypt/;
 
 // Invalid passphrase
 assert.throws(function() {
@@ -262,7 +264,7 @@ assert.throws(function() {
     cert: cert,
     rejectUnauthorized: false
   });
-}, /bad decrypt/);
+}, errMessageDecrypt);
 
 assert.throws(function() {
   tls.connect({
@@ -272,24 +274,24 @@ assert.throws(function() {
     cert: cert,
     rejectUnauthorized: false
   });
-}, /bad decrypt/);
+}, errMessageDecrypt);
 
 assert.throws(function() {
   tls.connect({
     port: server.address().port,
-    key: [{pem: passKey}],
+    key: [{ pem: passKey }],
     passphrase: 'invalid',
     cert: cert,
     rejectUnauthorized: false
   });
-}, /bad decrypt/);
+}, errMessageDecrypt);
 
 assert.throws(function() {
   tls.connect({
     port: server.address().port,
-    key: [{pem: passKey, passphrase: 'invalid'}],
-    passphrase: 'passphrase', // Valid but unused
+    key: [{ pem: passKey, passphrase: 'invalid' }],
+    passphrase: 'password', // Valid but unused
     cert: cert,
     rejectUnauthorized: false
   });
-}, /bad decrypt/);
+}, errMessageDecrypt);

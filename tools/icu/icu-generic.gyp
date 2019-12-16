@@ -30,23 +30,11 @@
       'type': 'none',
       'toolsets': [ 'host', 'target' ],
       'direct_dependent_settings': {
-        'conditions': [
-          [ 'icu_endianness == "l"', {
-             'defines': [
-                # ICU cannot swap the initial data without this.
-                # http://bugs.icu-project.org/trac/ticket/11046
-                'UCONFIG_NO_LEGACY_CONVERSION=1'
-             ],
-          }],
-        ],
         'defines': [
           'UCONFIG_NO_SERVICE=1',
-          'UCONFIG_NO_REGULAR_EXPRESSIONS=1',
           'U_ENABLE_DYLOAD=0',
           'U_STATIC_IMPLEMENTATION=1',
-          # Don't need std::string in API.
-          # Also, problematic: <http://bugs.icu-project.org/trac/ticket/11333>
-          'U_HAVE_STD_STRING=0',
+          'U_HAVE_STD_STRING=1',
           # TODO(srl295): reenable following pending
           # https://code.google.com/p/v8/issues/detail?id=3345
           # (saves some space)
@@ -63,7 +51,7 @@
       'direct_dependent_settings': {
         'conditions': [
           [ 'os_posix == 1 and OS != "mac" and OS != "ios"', {
-            'cflags': [ '-Wno-deprecated-declarations' ],
+            'cflags': [ '-Wno-deprecated-declarations', '-Wno-strict-aliasing' ],
             'cflags_cc': [ '-frtti' ],
             'cflags_cc!': [ '-fno-rtti' ],
           }],
@@ -80,6 +68,7 @@
           'VCCLCompilerTool': {
             'RuntimeTypeInfo': 'true',
             'ExceptionHandling': '1',
+            'AdditionalOptions': [ '/source-charset:utf-8' ],
           },
         },
         'configurations': {
@@ -223,16 +212,17 @@
           'conditions': [
             [ 'icu_small == "false"', { # and OS=win
               # full data - just build the full data file, then we are done.
-              'sources': [ '<(SHARED_INTERMEDIATE_DIR)/icudt<(icu_ver_major)<(icu_endianness)_dat.obj' ],
+              'sources': [ '<(SHARED_INTERMEDIATE_DIR)/icudt<(icu_ver_major)<(icu_endianness)_dat.<(icu_asm_ext)' ],
               'dependencies': [ 'genccode#host' ],
               'actions': [
                 {
                   'action_name': 'icudata',
                   'msvs_quote_cmd': 0,
                   'inputs': [ '<(icu_data_in)' ],
-                  'outputs': [ '<(SHARED_INTERMEDIATE_DIR)/icudt<(icu_ver_major)<(icu_endianness)_dat.obj' ],
+                  'outputs': [ '<(SHARED_INTERMEDIATE_DIR)/icudt<(icu_ver_major)<(icu_endianness)_dat.<(icu_asm_ext)' ],
+                  # on Windows, we can go directly to .obj file (-o) option.
                   'action': [ '<(PRODUCT_DIR)/genccode',
-                              '-o',
+                              '<@(icu_asm_opts)', # -o
                               '-d', '<(SHARED_INTERMEDIATE_DIR)',
                               '-n', 'icudata',
                               '-e', 'icudt<(icu_ver_major)',
@@ -267,9 +257,9 @@
                   'action_name': 'genccode',
                   'msvs_quote_cmd': 0,
                   'inputs': [ '<(SHARED_INTERMEDIATE_DIR)/icutmp/icudt<(icu_ver_major)<(icu_endianness).dat' ],
-                  'outputs': [ '<(SHARED_INTERMEDIATE_DIR)/icudt<(icu_ver_major)<(icu_endianness)_dat.obj' ],
+                  'outputs': [ '<(SHARED_INTERMEDIATE_DIR)/icudt<(icu_ver_major)<(icu_endianness)_dat.<(icu_asm_ext)' ],
                   'action': [ '<(PRODUCT_DIR)/genccode',
-                              '-o',
+                              '<@(icu_asm_opts)', # -o
                               '-d', '<(SHARED_INTERMEDIATE_DIR)/',
                               '-n', 'icudata',
                               '-e', 'icusmdt<(icu_ver_major)',
@@ -277,20 +267,20 @@
                 },
               ],
               # This file contains the small ICU data.
-              'sources': [ '<(SHARED_INTERMEDIATE_DIR)/icudt<(icu_ver_major)<(icu_endianness)_dat.obj' ],
+              'sources': [ '<(SHARED_INTERMEDIATE_DIR)/icudt<(icu_ver_major)<(icu_endianness)_dat.<(icu_asm_ext)' ],
             } ] ], #end of OS==win and icu_small == true
         }, { # OS != win
           'conditions': [
             [ 'icu_small == "false"', {
-              # full data - just build the full data file, then we are done.
-              'sources': [ '<(SHARED_INTERMEDIATE_DIR)/icudt<(icu_ver_major)_dat.c' ],
+              # full data - no trim needed
+              'sources': [ '<(SHARED_INTERMEDIATE_DIR)/icudt<(icu_ver_major)_dat.<(icu_asm_ext)' ],
               'dependencies': [ 'genccode#host', 'icupkg#host', 'icu_implementation#host', 'icu_uconfig' ],
               'include_dirs': [
                 '<(icu_path)/source/common',
               ],
               'actions': [
                 {
-                   # Swap endianness (if needed), or at least copy the file
+                   # Copy the .dat file, swapping endianness if needed.
                    'action_name': 'icupkg',
                    'inputs': [ '<(icu_data_in)' ],
                    'outputs':[ '<(SHARED_INTERMEDIATE_DIR)/icudt<(icu_ver_major)<(icu_endianness).dat' ],
@@ -301,7 +291,7 @@
                              ],
                 },
                 {
-                   # Rename without the endianness marker
+                   # Rename without the endianness marker (icudt64l.dat -> icudt64.dat)
                    'action_name': 'copy',
                    'inputs': [ '<(SHARED_INTERMEDIATE_DIR)/icudt<(icu_ver_major)<(icu_endianness).dat' ],
                    'outputs':[ '<(SHARED_INTERMEDIATE_DIR)/icudt<(icu_ver_major).dat' ],
@@ -311,12 +301,14 @@
                              ],
                 },
                 {
+                  # convert full ICU data file to .c, or .S, etc.
                   'action_name': 'icudata',
                   'inputs': [ '<(SHARED_INTERMEDIATE_DIR)/icudt<(icu_ver_major).dat' ],
-                  'outputs':[ '<(SHARED_INTERMEDIATE_DIR)/icudt<(icu_ver_major)_dat.c' ],
+                  'outputs':[ '<(SHARED_INTERMEDIATE_DIR)/icudt<(icu_ver_major)_dat.<(icu_asm_ext)' ],
                   'action': [ '<(PRODUCT_DIR)/genccode',
                               '-e', 'icudt<(icu_ver_major)',
                               '-d', '<(SHARED_INTERMEDIATE_DIR)',
+                              '<@(icu_asm_opts)',
                               '-f', 'icudt<(icu_ver_major)_dat',
                               '<@(_inputs)' ],
                 },
@@ -329,7 +321,8 @@
               'export_dependent_settings': [ 'icustubdata' ],
               'actions': [
                 {
-                  # trim down ICU
+                  # Trim down ICU.
+                  # Note that icupkg is invoked automatically, swapping endianness if needed.
                   'action_name': 'icutrim',
                   'inputs': [ '<(icu_data_in)', 'icu_small.json' ],
                   'outputs': [ '<(SHARED_INTERMEDIATE_DIR)/icutmp/icudt<(icu_ver_major)<(icu_endianness).dat' ],
@@ -344,7 +337,7 @@
                               '-v',
                               '-L', '<(icu_locales)'],
                 }, {
-                  # rename to get the final entrypoint name right
+                  # rename to get the final entrypoint name right (icudt64l.dat -> icusmdt64.dat)
                    'action_name': 'rename',
                    'inputs': [ '<(SHARED_INTERMEDIATE_DIR)/icutmp/icudt<(icu_ver_major)<(icu_endianness).dat' ],
                    'outputs': [ '<(SHARED_INTERMEDIATE_DIR)/icutmp/icusmdt<(icu_ver_major).dat' ],
@@ -353,17 +346,18 @@
                                '<@(_outputs)',
                              ],
                 }, {
-                  # build final .dat -> .obj
+                  # For icu-small, always use .c, don't try to use .S, etc.
                   'action_name': 'genccode',
                   'inputs': [ '<(SHARED_INTERMEDIATE_DIR)/icutmp/icusmdt<(icu_ver_major).dat' ],
-                  'outputs': [ '<(SHARED_INTERMEDIATE_DIR)/icusmdt<(icu_ver_major)_dat.c' ],
+                  'outputs': [ '<(SHARED_INTERMEDIATE_DIR)/icusmdt<(icu_ver_major)_dat.<(icu_asm_ext)' ],
                   'action': [ '<(PRODUCT_DIR)/genccode',
+                              '<@(icu_asm_opts)',
                               '-d', '<(SHARED_INTERMEDIATE_DIR)',
                               '<@(_inputs)' ],
                 },
               ],
               # This file contains the small ICU data
-              'sources': [ '<(SHARED_INTERMEDIATE_DIR)/icusmdt<(icu_ver_major)_dat.c' ],
+              'sources': [ '<(SHARED_INTERMEDIATE_DIR)/icusmdt<(icu_ver_major)_dat.<(icu_asm_ext)' ],
               # for umachine.h
               'include_dirs': [
                 '<(icu_path)/source/common',
@@ -480,7 +474,6 @@
         '<@(icu_src_tools)',
         '<@(icu_src_common)',
         '<@(icu_src_i18n)',
-        '<@(icu_src_io)',
         '<@(icu_src_stubdata)',
       ],
       'sources!': [
@@ -492,7 +485,6 @@
       'include_dirs': [
         '<(icu_path)/source/common',
         '<(icu_path)/source/i18n',
-        '<(icu_path)/source/io',
         '<(icu_path)/source/tools/toolutil',
       ],
       'defines': [
@@ -512,7 +504,6 @@
         'include_dirs': [
           '<(icu_path)/source/common',
           '<(icu_path)/source/i18n',
-          '<(icu_path)/source/io',
           '<(icu_path)/source/tools/toolutil',
         ],
         'conditions': [

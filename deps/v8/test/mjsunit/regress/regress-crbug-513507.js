@@ -4,7 +4,7 @@
 
 // Flags: --allow-natives-syntax
 
-// The following triggers a GC in SharedFunctionInfo::AddToOptimizedCodeMap.
+// The following triggers a GC in Context::AddToOSROptimizedCodeCache.
 // Flags: --gc-interval=1234 --gc-global
 
 function makeFun() {
@@ -16,8 +16,10 @@ function makeFun() {
       if (i == osr_fuse) %OptimizeOsr();
     }
   }
+  %PrepareFunctionForOptimization(fun);
   return fun;
 }
+%PrepareFunctionForOptimization(makeFun);
 
 makeFun()(7);  // Warm up.
 makeFun()(4);  // Optimize once.

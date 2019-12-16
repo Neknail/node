@@ -18,9 +18,6 @@ const globalTest = (useGlobal, cb, output) => (err, repl) => {
   if (err)
     return cb(err);
 
-  // The REPL registers 'module' and 'require' globals
-  common.allowGlobals(repl.context.module, repl.context.require);
-
   let str = '';
   output.on('data', (data) => (str += data));
   global.lunch = 'tacos';
@@ -53,7 +50,7 @@ const processTest = (useGlobal, cb, output) => (err, repl) => {
   let str = '';
   output.on('data', (data) => (str += data));
 
-  // if useGlobal is false, then `let process` should work
+  // If useGlobal is false, then `let process` should work
   repl.write('let process;\n');
   repl.write('21 * 2;\n');
   repl.close();
@@ -80,7 +77,7 @@ function runRepl(useGlobal, testFunc, cb) {
   };
 
   repl.createInternalRepl(
-      process.env,
-      opts,
-      testFunc(useGlobal, cb, opts.output));
+    process.env,
+    opts,
+    testFunc(useGlobal, cb, opts.output));
 }

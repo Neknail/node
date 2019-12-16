@@ -7,8 +7,8 @@ var rimraf = require('rimraf')
 
 var common = require('../common-tap')
 
-var pkg = path.resolve(__dirname, 'run-script')
-var cache = path.resolve(pkg, 'cache')
+var pkg = common.pkg
+var cache = common.cache
 var tmp = path.resolve(pkg, 'tmp')
 
 var opts = { cwd: pkg }
@@ -72,6 +72,14 @@ var exitCode = {
   version: '1.2.3',
   scripts: {
     'start': 'node -e "process.exit(7)"'
+  }
+}
+
+var shell = {
+  name: 'scripted',
+  version: '1.2.3',
+  scripts: {
+    'start': 'echo foo'
   }
 }
 
@@ -308,6 +316,12 @@ test('npm run-script no-params (direct only)', function (t) {
   })
 })
 
+test('npm run-script script-shell config', function (t) {
+  writeMetadata(shell)
+
+  common.npm(['run-script', 'start', '--script-shell', 'echo'], opts, testOutput.bind(null, t, '-c echo foo'))
+})
+
 test('npm run-script no-params (direct only)', function (t) {
   var expected = [
     'Lifecycle scripts included in scripted:',
@@ -338,6 +352,17 @@ test('npm run-script keep non-zero exit code', function (t) {
     t.ifError(err, 'ran run-script without parameters without crashing')
     t.equal(code, 7, 'got expected exit code')
     t.ok(stderr, 'should generate errors')
+    t.end()
+  })
+})
+
+test('npm run-script nonexistent script and display suggestions', function (t) {
+  writeMetadata(directOnly)
+
+  common.npm(['run-script', 'whoop'], opts, function (err, code, stdout, stderr) {
+    t.ifError(err, 'ran run-script without crashing')
+    t.equal(code, 1, 'got expected exit code')
+    t.has(stderr, 'Did you mean this?')
     t.end()
   })
 })

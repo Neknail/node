@@ -1,16 +1,17 @@
+// Flags: --expose-internals
 'use strict';
 const common = require('../common');
+if (common.isWindows)
+  common.skip('Does not support wrapping sockets with fd on Windows');
+
 const assert = require('assert');
 const net = require('net');
 const path = require('path');
-const Pipe = process.binding('pipe_wrap').Pipe;
+const { internalBinding } = require('internal/test/binding');
+const { Pipe, constants: PipeConstants } = internalBinding('pipe_wrap');
 
-if (common.isWindows) {
-  common.skip('Does not support wrapping sockets with fd on Windows');
-  return;
-}
-
-common.refreshTmpDir();
+const tmpdir = require('../common/tmpdir');
+tmpdir.refresh();
 
 function testClients(getSocketOpt, getConnectOpt, getConnectCb) {
   const cloneOptions = (index) =>
@@ -69,11 +70,11 @@ const forAllClients = (cb) => common.mustCall(cb, CLIENT_VARIANTS);
   })
   .on('error', function(err) {
     console.error(err);
-    assert.fail(null, null, `[Pipe server]${err}`);
+    assert.fail(`[Pipe server]${err}`);
   })
-  .listen({path: serverPath}, common.mustCall(function serverOnListen() {
+  .listen({ path: serverPath }, common.mustCall(function serverOnListen() {
     const getSocketOpt = (index) => {
-      const handle = new Pipe();
+      const handle = new Pipe(PipeConstants.SOCKET);
       const err = handle.bind(`${prefix}-client-${socketCounter++}`);
       assert(err >= 0, String(err));
       assert.notStrictEqual(handle.fd, -1);
@@ -85,16 +86,15 @@ const forAllClients = (cb) => common.mustCall(cb, CLIENT_VARIANTS);
       path: serverPath
     });
     const getConnectCb = (index) => common.mustCall(function clientOnConnect() {
-      const client = this;
       // Test if it's wrapping an existing fd
       assert(handleMap.has(index));
       const oldHandle = handleMap.get(index);
       assert.strictEqual(oldHandle.fd, this._handle.fd);
-      client.write(String(oldHandle.fd));
+      this.write(String(oldHandle.fd));
       console.error(`[Pipe]Sending data through fd ${oldHandle.fd}`);
-      client.on('error', function(err) {
+      this.on('error', function(err) {
         console.error(err);
-        assert.fail(null, null, `[Pipe Client]${err}`);
+        assert.fail(`[Pipe Client]${err}`);
       });
     });
 

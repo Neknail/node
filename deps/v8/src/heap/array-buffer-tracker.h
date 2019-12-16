@@ -7,16 +7,18 @@
 
 #include <unordered_map>
 
-#include "src/allocation.h"
 #include "src/base/platform/mutex.h"
-#include "src/globals.h"
+#include "src/common/globals.h"
+#include "src/objects/backing-store.h"
+#include "src/objects/js-array-buffer.h"
+#include "src/utils/allocation.h"
 
 namespace v8 {
 namespace internal {
 
-class Heap;
-class JSArrayBuffer;
+class MarkingState;
 class Page;
+class Space;
 
 class ArrayBufferTracker : public AllStatic {
  public:
@@ -30,17 +32,22 @@ class ArrayBufferTracker : public AllStatic {
 
   // Register/unregister a new JSArrayBuffer |buffer| for tracking. Guards all
   // access to the tracker by taking the page lock for the corresponding page.
-  inline static void RegisterNew(Heap* heap, JSArrayBuffer* buffer);
-  inline static void Unregister(Heap* heap, JSArrayBuffer* buffer);
+  inline static void RegisterNew(Heap* heap, JSArrayBuffer buffer,
+                                 std::shared_ptr<BackingStore>);
+  inline static std::shared_ptr<BackingStore> Unregister(Heap* heap,
+                                                         JSArrayBuffer buffer);
+  inline static std::shared_ptr<BackingStore> Lookup(Heap* heap,
+                                                     JSArrayBuffer buffer);
 
-  // Frees all backing store pointers for dead JSArrayBuffers in new space.
+  // Identifies all backing store pointers for dead JSArrayBuffers in new space.
   // Does not take any locks and can only be called during Scavenge.
-  static void FreeDeadInNewSpace(Heap* heap);
+  static void PrepareToFreeDeadInNewSpace(Heap* heap);
 
   // Frees all backing store pointers for dead JSArrayBuffer on a given page.
   // Requires marking information to be present. Requires the page lock to be
   // taken by the caller.
-  static void FreeDead(Page* page);
+  template <typename MarkingState>
+  static void FreeDead(Page* page, MarkingState* marking_state);
 
   // Frees all remaining, live or dead, array buffers on a page. Only useful
   // during tear down.
@@ -51,7 +58,10 @@ class ArrayBufferTracker : public AllStatic {
   static bool ProcessBuffers(Page* page, ProcessingMode mode);
 
   // Returns whether a buffer is currently tracked.
-  static bool IsTracked(JSArrayBuffer* buffer);
+  V8_EXPORT_PRIVATE static bool IsTracked(JSArrayBuffer buffer);
+
+  // Tears down the tracker and frees up all registered array buffers.
+  static void TearDown(Heap* heap);
 };
 
 // LocalArrayBufferTracker tracks internalized array buffers.
@@ -59,40 +69,60 @@ class ArrayBufferTracker : public AllStatic {
 // Never use directly but instead always call through |ArrayBufferTracker|.
 class LocalArrayBufferTracker {
  public:
-  typedef JSArrayBuffer* Key;
-  typedef size_t Value;
-
   enum CallbackResult { kKeepEntry, kUpdateEntry, kRemoveEntry };
   enum FreeMode { kFreeDead, kFreeAll };
 
-  explicit LocalArrayBufferTracker(Heap* heap) : heap_(heap) {}
+  explicit LocalArrayBufferTracker(Page* page) : page_(page) {}
   ~LocalArrayBufferTracker();
 
-  inline void Add(Key key, const Value& value);
-  inline Value Remove(Key key);
+  inline void Add(JSArrayBuffer buffer,
+                  std::shared_ptr<BackingStore> backing_store);
+  inline std::shared_ptr<BackingStore> Remove(JSArrayBuffer buffer);
+  inline std::shared_ptr<BackingStore> Lookup(JSArrayBuffer buffer);
 
-  // Frees up array buffers determined by |free_mode|.
-  template <FreeMode free_mode>
-  void Free();
+  // Frees up array buffers.
+  //
+  // Sample usage:
+  // Free([](HeapObject array_buffer) {
+  //    if (should_free_internal(array_buffer)) return true;
+  //    return false;
+  // });
+  template <typename Callback>
+  void Free(Callback should_free);
 
   // Processes buffers one by one. The CallbackResult of the callback decides
   // what action to take on the buffer.
   //
   // Callback should be of type:
-  //   CallbackResult fn(JSArrayBuffer* buffer, JSArrayBuffer** new_buffer);
+  //   CallbackResult fn(JSArrayBuffer buffer, JSArrayBuffer* new_buffer);
   template <typename Callback>
   void Process(Callback callback);
 
-  bool IsEmpty() { return array_buffers_.empty(); }
+  bool IsEmpty() const { return array_buffers_.empty(); }
 
-  bool IsTracked(Key key) {
-    return array_buffers_.find(key) != array_buffers_.end();
+  bool IsTracked(JSArrayBuffer buffer) const {
+    return array_buffers_.find(buffer) != array_buffers_.end();
   }
 
  private:
-  typedef std::unordered_map<Key, Value> TrackingData;
+  class Hasher {
+   public:
+    size_t operator()(JSArrayBuffer buffer) const {
+      return static_cast<size_t>(buffer.ptr() >> 3);
+    }
+  };
 
-  Heap* heap_;
+  using TrackingData =
+      std::unordered_map<JSArrayBuffer, std::shared_ptr<BackingStore>, Hasher>;
+
+  // Internal version of add that does not update counters. Requires separate
+  // logic for updating external memory counters.
+  inline void AddInternal(JSArrayBuffer buffer,
+                          std::shared_ptr<BackingStore> backing_store);
+
+  Page* page_;
+  // The set contains raw heap pointers which are removed by the GC upon
+  // processing the tracker through its owning page.
   TrackingData array_buffers_;
 };
 

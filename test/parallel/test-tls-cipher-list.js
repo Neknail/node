@@ -1,10 +1,8 @@
 'use strict';
 const common = require('../common');
 
-if (!common.hasCrypto) {
+if (!common.hasCrypto)
   common.skip('missing crypto');
-  return;
-}
 
 const assert = require('assert');
 const spawn = require('child_process').spawn;
@@ -25,8 +23,8 @@ function doCheck(arg, check) {
     }).on('error', common.mustNotCall());
 }
 
-// test the default unmodified version
+// Test the default unmodified version
 doCheck([], defaultCoreList);
 
-// test the command line switch by itself
+// Test the command line switch by itself
 doCheck(['--tls-cipher-list=ABC'], 'ABC');

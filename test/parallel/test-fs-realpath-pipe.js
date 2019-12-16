@@ -2,10 +2,8 @@
 
 const common = require('../common');
 
-if (common.isWindows || common.isAix) {
+if (common.isWindows || common.isAIX)
   common.skip(`No /dev/stdin on ${process.platform}.`);
-  return;
-}
 
 const assert = require('assert');
 
@@ -24,7 +22,7 @@ for (const code of [
     if (require('fs').realpathSync('/dev/stdin')) {
       process.exit(2);
     }
-  } catch (e) {
+  } catch {
     process.exit(1);
   }`
 ]) {

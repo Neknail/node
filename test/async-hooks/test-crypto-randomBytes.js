@@ -1,12 +1,13 @@
 'use strict';
 
 const common = require('../common');
-if (!common.hasCrypto) {
+if (!common.hasCrypto)
   common.skip('missing crypto');
-  return;
-}
+if (!common.isMainThread)
+  common.skip('Worker bootstrapping works differently -> different async IDs');
+
 const assert = require('assert');
-const tick = require('./tick');
+const tick = require('../common/tick');
 const initHooks = require('./init-hooks');
 const { checkInvocations } = require('./hook-checks');
 const crypto = require('crypto');
@@ -37,7 +38,7 @@ function onexit() {
   const a = as[0];
   assert.strictEqual(a.type, 'RANDOMBYTESREQUEST');
   assert.strictEqual(typeof a.uid, 'number');
-  assert.strictEqual(a.triggerId, 1);
+  assert.strictEqual(a.triggerAsyncId, 1);
   checkInvocations(a, { init: 1, before: 1, after: 1, destroy: 1 },
                    'when process exits');
 }

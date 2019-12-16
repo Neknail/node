@@ -803,3 +803,35 @@ assertTrue(/^[\444]*$/.test("\u{24}4"));
 assertTrue(/^[\d-X]*$/.test("234-X-432"));  // CharacterRangeOrUnion.
 assertTrue(/^[\d-X-Z]*$/.test("234-XZ-432"));
 assertFalse(/^[\d-X-Z]*$/.test("234-XYZ-432"));
+
+// Lone leading surrogates. Just here to exercise specific parsing code-paths.
+
+assertFalse(/\uDB88|\uDBEC|aa/.test(""));
+assertFalse(/\uDB88|\uDBEC|aa/u.test(""));
+
+// EscapeRegExpPattern
+assertEquals("\\n", /\n/.source);
+assertEquals("\\n", new RegExp("\n").source);
+assertEquals("\\n", new RegExp("\\n").source);
+assertEquals("\\\\n", /\\n/.source);
+assertEquals("\\r", /\r/.source);
+assertEquals("\\r", new RegExp("\r").source);
+assertEquals("\\r", new RegExp("\\r").source);
+assertEquals("\\\\r", /\\r/.source);
+assertEquals("\\u2028", /\u2028/.source);
+assertEquals("\\u2028", new RegExp("\u2028").source);
+assertEquals("\\u2028", new RegExp("\\u2028").source);
+assertEquals("\\u2029", /\u2029/.source);
+assertEquals("\\u2029", new RegExp("\u2029").source);
+assertEquals("\\u2029", new RegExp("\\u2029").source);
+assertEquals("[/]", /[/]/.source);
+assertEquals("[\\/]", /[\/]/.source);
+assertEquals("[\\\\/]", /[\\/]/.source);
+assertEquals("[/]", new RegExp("[/]").source);
+assertEquals("[/]", new RegExp("[\/]").source);
+assertEquals("[\\/]", new RegExp("[\\/]").source);
+assertEquals("[[/]", /[[/]/.source);
+assertEquals("[/]]", /[/]]/.source);
+assertEquals("[[/]]", /[[/]]/.source);
+assertEquals("[[\\/]", /[[\/]/.source);
+assertEquals("[[\\/]]", /[[\/]]/.source);

@@ -21,29 +21,20 @@
 
 'use strict';
 const common = require('../common');
-const assert = require('assert');
-
-if (!common.hasCrypto) {
+if (!common.hasCrypto)
   common.skip('missing crypto');
-  return;
-}
+
+const fixtures = require('../common/fixtures');
+const assert = require('assert');
 const tls = require('tls');
 
-const fs = require('fs');
-
-const dir = common.fixturesDir;
-const options = { key: fs.readFileSync(`${dir}/test_key.pem`),
-                  cert: fs.readFileSync(`${dir}/test_cert.pem`),
-                  ca: [ fs.readFileSync(`${dir}/test_ca.pem`) ] };
+const options = { key: fixtures.readKey('rsa_private.pem'),
+                  cert: fixtures.readKey('rsa_cert.crt'),
+                  ca: [ fixtures.readKey('rsa_ca.crt') ] };
 
 const server = tls.createServer(options, onconnection);
 let gotChunk = false;
 let gotDrain = false;
-
-setTimeout(function() {
-  console.log('not ok - timed out');
-  process.exit(1);
-}, common.platformTimeout(1000));
 
 function onconnection(conn) {
   conn.on('data', function(c) {
@@ -52,7 +43,7 @@ function onconnection(conn) {
       console.log('ok - got chunk');
     }
 
-    // just some basic sanity checks.
+    // Just some basic sanity checks.
     assert(c.length);
     assert(Buffer.isBuffer(c));
 
@@ -77,8 +68,9 @@ server.listen(0, function() {
       process.exit(0);
     write();
   }
+
   function write() {
-    // this needs to return false eventually
+    // This needs to return false eventually
     while (false !== conn.write(chunk));
   }
 });

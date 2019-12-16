@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-InspectorTest.log('Test for Debugger.getPossibleBreakpoints');
+let {session, contextGroup, Protocol} = InspectorTest.start('Test for Debugger.getPossibleBreakpoints');
 
 Protocol.Runtime.enable();
 Protocol.Debugger.enable();
@@ -118,7 +118,8 @@ function foo4() { Promise.resolve().then(() => 42) };\nfoo3();\nfoo4();`;
     Protocol.Debugger.onPaused(message => dumpBreakLocationInSourceAndResume(message, source, 3, 18));
 
     var source = `function foo5() { Promise.resolve().then(() => 42) }
-function foo6() { Promise.resolve().then(() => 42) }`;
+function foo6() { Promise.resolve().then(() => 42) }
+`;
     waitForPossibleBreakpoints(source, { lineNumber: 0, columnNumber: 0 }, undefined, { name: 'with-offset.js', line_offset: 3, column_offset: 18 })
       .then(message => dumpAllLocations(message, source, 3, 18))
       .then(setAllBreakpoints)
@@ -134,6 +135,8 @@ function foo6() { Promise.resolve().then(() => 42) }`;
 
     checkSource('() => 239\n', { lineNumber: 0, columnNumber: 0 })
       .then(() => checkSource('function foo() { function boo() { return 239 }  }\n', { lineNumber: 0, columnNumber: 0 }))
+      .then(() => checkSource('function foo() { function boo() { return 239 }; boo }\n', { lineNumber: 0, columnNumber: 0 }))
+      .then(() => checkSource('function foo() { let boo = function() { return 239 }; }\n', { lineNumber: 0, columnNumber: 0 }))
       .then(() => checkSource('() => { 239 }\n', { lineNumber: 0, columnNumber: 0 }))
       .then(() => checkSource('function foo() { 239 }\n', { lineNumber: 0, columnNumber: 0 }))
       // TODO(kozyatinskiy): lineNumber for return position should be only 9, not 8.
@@ -153,7 +156,7 @@ function foo6() { Promise.resolve().then(() => 42) }`;
 function compileScript(source, origin) {
   var promise = Protocol.Debugger.onceScriptParsed().then(message => message.params.scriptId);
   if (!origin) origin = { name: '', line_offset: 0, column_offset: 0 };
-  utils.compileAndRunWithOrigin(source, origin.name, origin.line_offset, origin.column_offset, false);
+  contextGroup.addScript(source, origin.line_offset, origin.column_offset, origin.name);
   return promise;
 }
 

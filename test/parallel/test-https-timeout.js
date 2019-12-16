@@ -22,20 +22,18 @@
 'use strict';
 const common = require('../common');
 
-if (!common.hasCrypto) {
+if (!common.hasCrypto)
   common.skip('missing crypto');
-  return;
-}
+
+const fixtures = require('../common/fixtures');
 const https = require('https');
 
-const fs = require('fs');
-
 const options = {
-  key: fs.readFileSync(`${common.fixturesDir}/keys/agent1-key.pem`),
-  cert: fs.readFileSync(`${common.fixturesDir}/keys/agent1-cert.pem`)
+  key: fixtures.readKey('agent1-key.pem'),
+  cert: fixtures.readKey('agent1-cert.pem')
 };
 
-// a server that never replies
+// A server that never replies
 const server = https.createServer(options, function() {
   console.log('Got request.  Doing nothing.');
 }).listen(0, common.mustCall(function() {
@@ -53,10 +51,15 @@ const server = https.createServer(options, function() {
     console.log('got response');
   });
 
+  req.on('error', common.expectsError({
+    message: 'socket hang up',
+    code: 'ECONNRESET',
+    type: Error
+  }));
+
   req.on('timeout', common.mustCall(function() {
     console.log('timeout occurred outside');
     req.destroy();
     server.close();
-    process.exit(0);
   }));
 }));

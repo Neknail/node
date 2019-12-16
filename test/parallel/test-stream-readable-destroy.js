@@ -3,7 +3,6 @@
 const common = require('../common');
 const { Readable } = require('stream');
 const assert = require('assert');
-const { inherits } = require('util');
 
 {
   const read = new Readable({
@@ -11,7 +10,7 @@ const { inherits } = require('util');
   });
   read.resume();
 
-  read.on('end', common.mustCall());
+  read.on('close', common.mustCall());
 
   read.destroy();
   assert.strictEqual(read.destroyed, true);
@@ -25,7 +24,8 @@ const { inherits } = require('util');
 
   const expected = new Error('kaboom');
 
-  read.on('end', common.mustCall());
+  read.on('end', common.mustNotCall('no end event'));
+  read.on('close', common.mustCall());
   read.on('error', common.mustCall((err) => {
     assert.strictEqual(err, expected);
   }));
@@ -47,6 +47,7 @@ const { inherits } = require('util');
   const expected = new Error('kaboom');
 
   read.on('end', common.mustNotCall('no end event'));
+  read.on('close', common.mustCall());
   read.on('error', common.mustCall((err) => {
     assert.strictEqual(err, expected);
   }));
@@ -68,8 +69,9 @@ const { inherits } = require('util');
 
   read.on('end', common.mustNotCall('no end event'));
 
-  // error is swallowed by the custom _destroy
+  // Error is swallowed by the custom _destroy
   read.on('error', common.mustNotCall('no error event'));
+  read.on('close', common.mustCall());
 
   read.destroy(expected);
   assert.strictEqual(read.destroyed, true);
@@ -106,6 +108,7 @@ const { inherits } = require('util');
   const fail = common.mustNotCall('no end event');
 
   read.on('end', fail);
+  read.on('close', common.mustCall());
 
   read.destroy();
 
@@ -126,13 +129,20 @@ const { inherits } = require('util');
     cb(expected);
   });
 
+  let ticked = false;
   read.on('end', common.mustNotCall('no end event'));
   read.on('error', common.mustCall((err) => {
+    assert.strictEqual(ticked, true);
+    assert.strictEqual(read._readableState.errorEmitted, true);
+    assert.strictEqual(read._readableState.errored, true);
     assert.strictEqual(err, expected);
   }));
 
   read.destroy();
+  assert.strictEqual(read._readableState.errorEmitted, false);
+  assert.strictEqual(read._readableState.errored, true);
   assert.strictEqual(read.destroyed, true);
+  ticked = true;
 }
 
 {
@@ -144,7 +154,7 @@ const { inherits } = require('util');
   read.destroyed = true;
   assert.strictEqual(read.destroyed, true);
 
-  // the internal destroy() mechanism should not be triggered
+  // The internal destroy() mechanism should not be triggered
   read.on('end', common.mustNotCall());
   read.destroy();
 }
@@ -156,13 +166,14 @@ const { inherits } = require('util');
     Readable.call(this);
   }
 
-  inherits(MyReadable, Readable);
+  Object.setPrototypeOf(MyReadable.prototype, Readable.prototype);
+  Object.setPrototypeOf(MyReadable, Readable);
 
   new MyReadable();
 }
 
 {
-  // destroy and destroy callback
+  // Destroy and destroy callback
   const read = new Readable({
     read() {}
   });
@@ -170,7 +181,75 @@ const { inherits } = require('util');
 
   const expected = new Error('kaboom');
 
-  read.destroy(expected, common.mustCall(function(err) {
-    assert.strictEqual(expected, err);
+  let ticked = false;
+  read.on('close', common.mustCall(() => {
+    assert.strictEqual(read._readableState.errorEmitted, false);
+    assert.strictEqual(ticked, true);
   }));
+  // 'error' should not be emitted since a callback is passed to
+  // destroy(err, callback);
+  read.on('error', common.mustNotCall());
+
+  assert.strictEqual(read._readableState.errored, false);
+  assert.strictEqual(read._readableState.errorEmitted, false);
+
+  read.destroy(expected, common.mustCall(function(err) {
+    assert.strictEqual(read._readableState.errored, true);
+    assert.strictEqual(err, expected);
+  }));
+  assert.strictEqual(read._readableState.errorEmitted, false);
+  assert.strictEqual(read._readableState.errored, true);
+  ticked = true;
+}
+
+{
+  const readable = new Readable({
+    destroy: common.mustCall(function(err, cb) {
+      process.nextTick(cb, new Error('kaboom 1'));
+    }),
+    read() {}
+  });
+
+  let ticked = false;
+  readable.on('close', common.mustCall(() => {
+    assert.strictEqual(ticked, true);
+    assert.strictEqual(readable._readableState.errorEmitted, true);
+  }));
+  readable.on('error', common.mustCall((err) => {
+    assert.strictEqual(ticked, true);
+    assert.strictEqual(err.message, 'kaboom 2');
+    assert.strictEqual(readable._readableState.errorEmitted, true);
+  }));
+
+  readable.destroy();
+  assert.strictEqual(readable.destroyed, true);
+  assert.strictEqual(readable._readableState.errored, false);
+  assert.strictEqual(readable._readableState.errorEmitted, false);
+
+  // Test case where `readable.destroy()` is called again with an error before
+  // the `_destroy()` callback is called.
+  readable.destroy(new Error('kaboom 2'));
+  assert.strictEqual(readable._readableState.errorEmitted, false);
+  assert.strictEqual(readable._readableState.errored, true);
+
+  ticked = true;
+}
+
+{
+  const read = new Readable({
+    read() {}
+  });
+
+  read.destroy();
+  read.push('hi');
+  read.on('data', common.mustNotCall());
+}
+
+{
+  const read = new Readable({
+    read: common.mustNotCall(function() {})
+  });
+  read.destroy();
+  assert.strictEqual(read.destroyed, true);
+  read.read();
 }

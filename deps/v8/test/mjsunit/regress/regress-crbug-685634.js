@@ -2,11 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --harmony-tailcalls
+// Flags: --allow-natives-syntax
 
 "use strict";
 
-function foo(f) { return f.apply(this, arguments); }
+function foo(f) {
+  return f.apply(this, arguments);
+};
+%PrepareFunctionForOptimization(foo);
 function bar() {}
 
 foo(bar);

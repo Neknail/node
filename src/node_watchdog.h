@@ -24,7 +24,6 @@
 
 #if defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
 
-#include "v8.h"
 #include "uv.h"
 #include "node_mutex.h"
 #include <vector>
@@ -45,12 +44,11 @@ class Watchdog {
 
  private:
   static void Run(void* arg);
-  static void Async(uv_async_t* async);
   static void Timer(uv_timer_t* timer);
 
   v8::Isolate* isolate_;
   uv_thread_t thread_;
-  uv_loop_t* loop_;
+  uv_loop_t loop_;
   uv_async_t async_;
   uv_timer_t timer_;
   bool* timed_out_;
@@ -100,7 +98,7 @@ class SigintWatchdogHelper {
   bool stopping_;
 
   static void* RunSigintWatchdog(void* arg);
-  static void HandleSignal(int signum);
+  static void HandleSignal(int signum, siginfo_t* info, void* ucontext);
 #else
   bool watchdog_disabled_;
   static BOOL WINAPI WinCtrlCHandlerRoutine(DWORD dwCtrlType);

@@ -232,16 +232,14 @@ CheckEachTypedArray(function parametersNotCalledIfDetached(constructor) {
   var tmp = {
     [Symbol.toPrimitive]() {
       assertUnreachable("Parameter should not be processed when " +
-                        "array.[[ViewedArrayBuffer]] is neutered.");
+                        "array.[[ViewedArrayBuffer]] is detached.");
       return 0;
     }
   };
 
   var array = new constructor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  %ArrayBufferNeuter(array.buffer);
+  %ArrayBufferDetach(array.buffer);
 
-  // TODO(caitp): this should throw due to being invoked on a TypedArray with a
-  // detached buffer (per v8:4648).
-  array.copyWithin(tmp, tmp, tmp);
+  assertThrows(() => array.copyWithin(tmp, tmp, tmp), TypeError);
   assertEquals(0, array.length, "array.[[ViewedArrayBuffer]] is detached");
 });

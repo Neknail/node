@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --no-always-opt --crankshaft
+// Flags: --allow-natives-syntax --no-always-opt --opt
+// Flags: --no-stress-flush-bytecode
 
 var source =
 `
@@ -50,7 +51,7 @@ var f = (function outer() {
 f()()();
 `;
 
-InspectorTest.log("Test collecting code coverage data with Profiler.collectCoverage.");
+let {session, contextGroup, Protocol} = InspectorTest.start("Test collecting code coverage data with Profiler.collectCoverage.");
 
 function ClearAndGC() {
   return Protocol.Runtime.evaluate({ expression: "fib = g = f = h = is_optimized = null;" })
@@ -58,9 +59,7 @@ function ClearAndGC() {
 }
 
 function GC() {
-  return Protocol.HeapProfiler.enable()
-           .then(() => Protocol.HeapProfiler.collectGarbage())
-           .then(() => Protocol.HeapProfiler.disable());
+  return Protocol.HeapProfiler.collectGarbage();
 }
 
 function LogSorted(message) {
@@ -76,7 +75,7 @@ InspectorTest.runTestSuite([
       .then((result) => Protocol.Runtime.runScript({ scriptId: result.result.scriptId }))
       .then(GC)
       .then(Protocol.Profiler.enable)
-      .then(() => Protocol.Profiler.startPreciseCoverage({callCount: true}))
+      .then(() => Protocol.Profiler.startPreciseCoverage({callCount: true, detailed: false}))
       .then(Protocol.Profiler.takePreciseCoverage)
       .then(LogSorted)
       .then(Protocol.Profiler.takePreciseCoverage)
@@ -91,7 +90,7 @@ InspectorTest.runTestSuite([
   {
     Protocol.Runtime.enable()
       .then(Protocol.Profiler.enable)
-      .then(() => Protocol.Profiler.startPreciseCoverage({callCount: true}))
+      .then(() => Protocol.Profiler.startPreciseCoverage({callCount: true, detailed: false}))
       .then(() => Protocol.Runtime.compileScript({ expression: source, sourceURL: arguments.callee.name, persistScript: true }))
       .then((result) => Protocol.Runtime.runScript({ scriptId: result.result.scriptId }))
       .then(InspectorTest.logMessage)
@@ -140,7 +139,7 @@ InspectorTest.runTestSuite([
   {
     Protocol.Runtime.enable()
     .then(Protocol.Profiler.enable)
-    .then(Protocol.Profiler.startPreciseCoverage)
+    .then(() => Protocol.Profiler.startPreciseCoverage({detailed: false}))
     .then(() => Protocol.Runtime.compileScript({ expression: source, sourceURL: arguments.callee.name, persistScript: true }))
     .then((result) => Protocol.Runtime.runScript({ scriptId: result.result.scriptId }))
     .then(InspectorTest.logMessage)
@@ -160,7 +159,7 @@ InspectorTest.runTestSuite([
   {
     Protocol.Runtime.enable()
       .then(Protocol.Profiler.enable)
-      .then(() => Protocol.Profiler.startPreciseCoverage({callCount: true}))
+      .then(() => Protocol.Profiler.startPreciseCoverage({callCount: true, detailed: false}))
       .then(() => Protocol.Runtime.compileScript({ expression: source, sourceURL: arguments.callee.name, persistScript: true }))
       .then((result) => Protocol.Runtime.runScript({ scriptId: result.result.scriptId }))
       .then(InspectorTest.logMessage)
@@ -180,7 +179,7 @@ InspectorTest.runTestSuite([
   {
     function handleDebuggerPause() {
       Protocol.Profiler.enable()
-          .then(() => Protocol.Profiler.startPreciseCoverage({callCount: true}))
+          .then(() => Protocol.Profiler.startPreciseCoverage({callCount: true, detailed: false}))
           .then(Protocol.Debugger.resume)
     }
     Protocol.Debugger.enable();
@@ -204,7 +203,7 @@ InspectorTest.runTestSuite([
   {
     Protocol.Runtime.enable()
       .then(Protocol.Profiler.enable)
-      .then(Protocol.Profiler.startPreciseCoverage)
+      .then(() => Protocol.Profiler.startPreciseCoverage({detailed: false}))
       .then(() => Protocol.Runtime.compileScript({ expression: source, sourceURL: arguments.callee.name, persistScript: true }))
       .then((result) => Protocol.Runtime.runScript({ scriptId: result.result.scriptId }))
       .then(InspectorTest.logMessage)
@@ -228,14 +227,14 @@ InspectorTest.runTestSuite([
   {
     // Enabling the debugger holds onto script objects even though its
     // functions can be garbage collected. We would get empty ScriptCoverage
-    // entires unless we remove them.
+    // entries unless we remove them.
     Protocol.Debugger.enable()
       .then(Protocol.Runtime.enable)
       .then(() => Protocol.Runtime.compileScript({ expression: source, sourceURL: arguments.callee.name, persistScript: true }))
       .then((result) => Protocol.Runtime.runScript({ scriptId: result.result.scriptId }))
       .then(ClearAndGC)
       .then(Protocol.Profiler.enable)
-      .then(Protocol.Profiler.startPreciseCoverage)
+      .then(() => Protocol.Profiler.startPreciseCoverage({detailed: false}))
       .then(Protocol.Profiler.takePreciseCoverage)
       .then(LogSorted)
       .then(Protocol.Profiler.stopPreciseCoverage)
@@ -249,7 +248,7 @@ InspectorTest.runTestSuite([
   {
     Protocol.Runtime.enable()
       .then(Protocol.Profiler.enable)
-      .then(() => Protocol.Profiler.startPreciseCoverage({callCount: true}))
+      .then(() => Protocol.Profiler.startPreciseCoverage({callCount: true, detailed: false}))
       .then(() => Protocol.Runtime.compileScript({ expression: nested, sourceURL: arguments.callee.name, persistScript: true }))
       .then((result) => Protocol.Runtime.runScript({ scriptId: result.result.scriptId }))
       .then(InspectorTest.logMessage)

@@ -4,10 +4,10 @@ const assert = require('assert');
 const repl = require('repl');
 const zlib = require('zlib');
 
-// just use builtin stream inherited from Duplex
+// Just use builtin stream inherited from Duplex
 const putIn = zlib.createGzip();
 const testMe = repl.start('', putIn, function(cmd, context, filename,
-      callback) {
+                                              callback) {
   callback(null, cmd);
 });
 

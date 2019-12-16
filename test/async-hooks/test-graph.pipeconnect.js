@@ -6,14 +6,15 @@ const verifyGraph = require('./verify-graph');
 
 const net = require('net');
 
-common.refreshTmpDir();
+const tmpdir = require('../common/tmpdir');
+tmpdir.refresh();
 
 const hooks = initHooks();
 hooks.enable();
 
-net.createServer(function(c) {
+const server = net.createServer((c) => {
   c.end();
-  this.close();
+  server.close();
 }).listen(common.PIPE, common.mustCall(onlisten));
 
 function onlisten() {
@@ -28,10 +29,11 @@ function onexit() {
   hooks.disable();
   verifyGraph(
     hooks,
-    [ { type: 'PIPEWRAP', id: 'pipe:1', triggerId: null },
-      { type: 'PIPEWRAP', id: 'pipe:2', triggerId: 'pipe:1' },
-      { type: 'PIPECONNECTWRAP', id: 'pipeconnect:1', triggerId: 'pipe:2' },
-      { type: 'PIPEWRAP', id: 'pipe:3', triggerId: 'pipe:1' },
-      { type: 'SHUTDOWNWRAP', id: 'shutdown:1', triggerId: 'pipe:3' } ]
+    [ { type: 'PIPESERVERWRAP', id: 'pipeserver:1', triggerAsyncId: null },
+      { type: 'PIPEWRAP', id: 'pipe:1', triggerAsyncId: 'pipeserver:1' },
+      { type: 'PIPECONNECTWRAP', id: 'pipeconnect:1',
+        triggerAsyncId: 'pipe:1' },
+      { type: 'PIPEWRAP', id: 'pipe:2', triggerAsyncId: 'pipeserver:1' },
+      { type: 'SHUTDOWNWRAP', id: 'shutdown:1', triggerAsyncId: 'pipe:2' } ]
   );
 }

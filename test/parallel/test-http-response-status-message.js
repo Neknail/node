@@ -20,12 +20,11 @@
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 'use strict';
-require('../common');
+const common = require('../common');
 const assert = require('assert');
 const http = require('http');
 const net = require('net');
-
-let testsComplete = 0;
+const Countdown = require('../common/countdown');
 
 const testCases = [
   { path: '/200', statusMessage: 'OK',
@@ -59,6 +58,8 @@ const server = net.createServer(function(connection) {
   });
 });
 
+const countdown = new Countdown(testCases.length, () => server.close());
+
 function runTest(testCaseIndex) {
   const testCase = testCases[testCaseIndex];
 
@@ -70,13 +71,11 @@ function runTest(testCaseIndex) {
     console.log(`client: actual status message: ${response.statusMessage}`);
     assert.strictEqual(testCase.statusMessage, response.statusMessage);
 
+    response.on('aborted', common.mustNotCall());
     response.on('end', function() {
-      testsComplete++;
-
+      countdown.dec();
       if (testCaseIndex + 1 < testCases.length) {
         runTest(testCaseIndex + 1);
-      } else {
-        server.close();
       }
     });
 
@@ -85,7 +84,3 @@ function runTest(testCaseIndex) {
 }
 
 server.listen(0, function() { runTest(0); });
-
-process.on('exit', function() {
-  assert.strictEqual(testCases.length, testsComplete);
-});

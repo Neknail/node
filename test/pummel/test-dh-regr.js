@@ -21,15 +21,17 @@
 
 'use strict';
 const common = require('../common');
-const assert = require('assert');
-
-if (!common.hasCrypto) {
+if (!common.hasCrypto)
   common.skip('missing crypto');
-  return;
-}
+
+const assert = require('assert');
 const crypto = require('crypto');
 
-const p = crypto.createDiffieHellman(1024).getPrime();
+// FIPS requires length >= 1024 but we use 256 in this test to keep it from
+// taking too long and timing out in CI.
+const length = common.hasFipsCrypto ? 1024 : 256;
+
+const p = crypto.createDiffieHellman(length).getPrime();
 
 for (let i = 0; i < 2000; i++) {
   const a = crypto.createDiffieHellman(p);
@@ -38,9 +40,14 @@ for (let i = 0; i < 2000; i++) {
   a.generateKeys();
   b.generateKeys();
 
+  const aSecret = a.computeSecret(b.getPublicKey());
+  const bSecret = b.computeSecret(a.getPublicKey());
+
   assert.deepStrictEqual(
-    a.computeSecret(b.getPublicKey()),
-    b.computeSecret(a.getPublicKey()),
-    'secrets should be equal!'
+    aSecret,
+    bSecret,
+    'Secrets should be equal.\n' +
+    `aSecret: ${aSecret.toString('base64')}\n` +
+    `bSecret: ${bSecret.toString('base64')}`
   );
 }

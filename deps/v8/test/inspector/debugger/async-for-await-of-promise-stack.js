@@ -2,11 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --harmony-async-iteration
+let {session, contextGroup, Protocol} = InspectorTest.start('Checks that async chains for for-await-of are correct.');
 
-InspectorTest.log('Checks that async chains for for-await-of are correct.');
-
-InspectorTest.addScript(`
+contextGroup.addInlineScript(`
 
 function Debugger(value) {
   debugger;
@@ -125,13 +123,12 @@ async function CaughtThrowOnBreak() {
   } catch (e) {
     Debugger(e);
   }
-}
-//# sourceURL=test.js`, 7, 129);
+}`, 'test.js');
 
-InspectorTest.setupScriptMap();
+session.setupScriptMap();
 Protocol.Debugger.onPaused(message => {
-  InspectorTest.logCallFrames(message.params.callFrames);
-  InspectorTest.logAsyncStackTrace(message.params.asyncStackTrace);
+  session.logCallFrames(message.params.callFrames);
+  session.logAsyncStackTrace(message.params.asyncStackTrace);
   InspectorTest.log('');
   Protocol.Debugger.resume();
 });

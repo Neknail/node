@@ -1,16 +1,25 @@
 'use strict';
+// Flags: --expose-internals
 const common = require('../common');
 
-if (!common.hasIntl) {
+if (!common.hasIntl)
   common.skip('missing Intl');
-  return;
-}
 
-const icu = process.binding('icu');
+const { internalBinding } = require('internal/test/binding');
+const icu = internalBinding('icu');
 const assert = require('assert');
 
+// Test hasConverter method
+assert(icu.hasConverter('utf-8'),
+       'hasConverter should report coverter exists for utf-8');
+assert(!icu.hasConverter('x'),
+       'hasConverter should report coverter does not exist for x');
+
 const tests = require('../fixtures/url-idna.js');
-const wptToASCIITests = require('../fixtures/url-toascii.js');
+const fixtures = require('../common/fixtures');
+const wptToASCIITests = require(
+  fixtures.path('wpt', 'url', 'resources', 'toascii.json')
+);
 
 {
   for (const [i, { ascii, unicode }] of tests.entries()) {
@@ -32,16 +41,20 @@ const wptToASCIITests = require('../fixtures/url-toascii.js');
     if (comment)
       caseComment += ` (${comment})`;
     if (output === null) {
-      assert.throws(() => icu.toASCII(input),
-                    /^Error: Cannot convert name to ASCII$/,
-                    `ToASCII ${caseComment}`);
-      assert.doesNotThrow(() => icu.toASCII(input, true),
-                          `ToASCII ${caseComment} in lenient mode`);
+      common.expectsError(
+        () => icu.toASCII(input),
+        {
+          code: 'ERR_INVALID_ARG_VALUE',
+          type: TypeError,
+          message: 'Cannot convert name to ASCII'
+        }
+      );
+      icu.toASCII(input, true); // Should not throw.
     } else {
       assert.strictEqual(icu.toASCII(input), output, `ToASCII ${caseComment}`);
       assert.strictEqual(icu.toASCII(input, true), output,
                          `ToASCII ${caseComment} in lenient mode`);
     }
-    assert.doesNotThrow(() => icu.toUnicode(input), `ToUnicode ${caseComment}`);
+    icu.toUnicode(input); // Should not throw.
   }
 }

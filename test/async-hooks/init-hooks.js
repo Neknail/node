@@ -1,7 +1,7 @@
 'use strict';
 // Flags: --expose-gc
 
-require('../common');
+const common = require('../common');
 const assert = require('assert');
 const async_hooks = require('async_hooks');
 const util = require('util');
@@ -25,6 +25,7 @@ class ActivityCollector {
     onbefore,
     onafter,
     ondestroy,
+    onpromiseResolve,
     logid = null,
     logtype = null
   } = {}) {
@@ -34,18 +35,21 @@ class ActivityCollector {
     this._logid = logid;
     this._logtype = logtype;
 
-    // register event handlers if provided
+    // Register event handlers if provided
     this.oninit = typeof oninit === 'function' ? oninit : noop;
     this.onbefore = typeof onbefore === 'function' ? onbefore : noop;
     this.onafter = typeof onafter === 'function' ? onafter : noop;
     this.ondestroy = typeof ondestroy === 'function' ? ondestroy : noop;
+    this.onpromiseResolve = typeof onpromiseResolve === 'function' ?
+      onpromiseResolve : noop;
 
-    // create the hook with which we'll collect activity data
+    // Create the hook with which we'll collect activity data
     this._asyncHook = async_hooks.createHook({
       init: this._init.bind(this),
       before: this._before.bind(this),
       after: this._after.bind(this),
-      destroy: this._destroy.bind(this)
+      destroy: this._destroy.bind(this),
+      promiseResolve: this._promiseResolve.bind(this)
     });
   }
 
@@ -65,28 +69,31 @@ class ActivityCollector {
     }
 
     const violations = [];
+    let tempActivityString;
+
     function v(msg) { violations.push(msg); }
     for (const a of this._activities.values()) {
-      if (types != null && types.indexOf(a.type) < 0) continue;
+      tempActivityString = activityString(a);
+      if (types != null && !types.includes(a.type)) continue;
 
       if (a.init && a.init.length > 1) {
-        v('Activity inited twice\n' + activityString(a) +
+        v(`Activity inited twice\n${tempActivityString}` +
           '\nExpected "init" to be called at most once');
       }
       if (a.destroy && a.destroy.length > 1) {
-        v('Activity destroyed twice\n' + activityString(a) +
+        v(`Activity destroyed twice\n${tempActivityString}` +
           '\nExpected "destroy" to be called at most once');
       }
       if (a.before && a.after) {
         if (a.before.length < a.after.length) {
           v('Activity called "after" without calling "before"\n' +
-            activityString(a) +
+            `${tempActivityString}` +
             '\nExpected no "after" call without a "before"');
         }
         if (a.before.some((x, idx) => x > a.after[idx])) {
           v('Activity had an instance where "after" ' +
             'was invoked before "before"\n' +
-            activityString(a) +
+            `${tempActivityString}` +
             '\nExpected "after" to be called after "before"');
         }
       }
@@ -94,7 +101,7 @@ class ActivityCollector {
         if (a.before.some((x, idx) => x > a.destroy[idx])) {
           v('Activity had an instance where "destroy" ' +
             'was invoked before "before"\n' +
-            activityString(a) +
+            `${tempActivityString}` +
             '\nExpected "destroy" to be called after "before"');
         }
       }
@@ -102,14 +109,18 @@ class ActivityCollector {
         if (a.after.some((x, idx) => x > a.destroy[idx])) {
           v('Activity had an instance where "destroy" ' +
             'was invoked before "after"\n' +
-            activityString(a) +
+            `${tempActivityString}` +
             '\nExpected "destroy" to be called after "after"');
         }
       }
+      if (!a.handleIsObject) {
+        v(`No resource object\n${tempActivityString}` +
+          '\nExpected "init" to be called with a resource object');
+      }
     }
     if (violations.length) {
-      console.error(violations.join('\n'));
-      assert.fail(violations.length, 0, `Failed sanity checks: ${violations}`);
+      console.error(violations.join('\n\n') + '\n');
+      assert.fail(`${violations.length} failed sanity checks`);
     }
   }
 
@@ -120,13 +131,13 @@ class ActivityCollector {
       Array.from(this._activities.values()) :
       this.activitiesOfTypes(types);
 
-    if (stage != null) console.log('\n%s', stage);
+    if (stage != null) console.log(`\n${stage}`);
     console.log(util.inspect(activities, false, depth, true));
   }
 
   activitiesOfTypes(types) {
     if (!Array.isArray(types)) types = [ types ];
-    return this.activities.filter((x) => types.indexOf(x.type) >= 0);
+    return this.activities.filter((x) => types.includes(x.type));
   }
 
   get activities() {
@@ -143,13 +154,17 @@ class ActivityCollector {
   _getActivity(uid, hook) {
     const h = this._activities.get(uid);
     if (!h) {
-      // if we allowed handles without init we ignore any further life time
+      // If we allowed handles without init we ignore any further life time
       // events this makes sense for a few tests in which we enable some hooks
       // later
       if (this._allowNoInit) {
-        const stub = { uid, type: 'Unknown' };
+        const stub = { uid, type: 'Unknown', handleIsObject: true, handle: {} };
         this._activities.set(uid, stub);
         return stub;
+      } else if (!common.isMainThread) {
+        // Worker threads start main script execution inside of an AsyncWrap
+        // callback, so we don't yield errors for these.
+        return null;
       } else {
         const err = new Error(`Found a handle whose ${hook}` +
                               ' hook was invoked but not its init hook');
@@ -162,12 +177,20 @@ class ActivityCollector {
     return h;
   }
 
-  _init(uid, type, triggerId, handle) {
-    const activity = { uid, type, triggerId };
+  _init(uid, type, triggerAsyncId, handle) {
+    const activity = {
+      uid,
+      type,
+      triggerAsyncId,
+      // In some cases (e.g. Timeout) the handle is a function, thus the usual
+      // `typeof handle === 'object' && handle !== null` check can't be used.
+      handleIsObject: handle instanceof Object,
+      handle
+    };
     this._stamp(activity, 'init');
     this._activities.set(uid, activity);
     this._maybeLog(uid, type, 'init');
-    this.oninit(uid, type, triggerId, handle);
+    this.oninit(uid, type, triggerAsyncId, handle);
   }
 
   _before(uid) {
@@ -191,27 +214,37 @@ class ActivityCollector {
     this.ondestroy(uid);
   }
 
+  _promiseResolve(uid) {
+    const h = this._getActivity(uid, 'promiseResolve');
+    this._stamp(h, 'promiseResolve');
+    this._maybeLog(uid, h && h.type, 'promiseResolve');
+    this.onpromiseResolve(uid);
+  }
+
   _maybeLog(uid, type, name) {
     if (this._logid &&
       (type == null || this._logtype == null || this._logtype === type)) {
-      print(this._logid + '.' + name + '.uid-' + uid);
+      print(`${this._logid}.${name}.uid-${uid}`);
     }
   }
 }
 
 exports = module.exports = function initHooks({
-    oninit,
-    onbefore,
-    onafter,
-    ondestroy,
-    allowNoInit,
-    logid,
-    logtype } = {}) {
+  oninit,
+  onbefore,
+  onafter,
+  ondestroy,
+  onpromiseResolve,
+  allowNoInit,
+  logid,
+  logtype
+} = {}) {
   return new ActivityCollector(process.hrtime(), {
     oninit,
     onbefore,
     onafter,
     ondestroy,
+    onpromiseResolve,
     allowNoInit,
     logid,
     logtype

@@ -25,7 +25,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --allow-natives-syntax --crankshaft --no-always-opt
+// Flags: --allow-natives-syntax --opt --no-always-opt
 
 deopt_trigger = 0;
 side_effect = 0;
@@ -75,6 +75,7 @@ function test(a, b, c, d, e, v) {
   assertEquals(24,   d);
   assertEquals(37.5, e);
 }
+%PrepareFunctionForOptimization(test);
 
 
 test(10.0, 20.0, 30.0, 40.0, 50.0, 1.5);

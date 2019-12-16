@@ -4,7 +4,7 @@
 
 // Flags: --validate-asm --allow-natives-syntax
 
-InspectorTest.log(
+let {session, contextGroup, Protocol} = InspectorTest.start(
     'This test runs asm.js which calls back to JS. JS triggers a break, on ' +
     'pause we set breakpoints in the asm.js code.');
 
@@ -25,6 +25,7 @@ function testFunction() {
     debugger;
   }
 
+  %PrepareFunctionForOptimization(generateAsmJs);
   %OptimizeFunctionOnNextCall(generateAsmJs);
   var fun = generateAsmJs(this, {'call_debugger': call_debugger}, undefined);
   fun();
@@ -53,7 +54,7 @@ InspectorTest.runTestSuite([
 
   function addScript(next) {
     afterScriptParsedCallback = next;
-    InspectorTest.addScript(testFunction.toString());
+    contextGroup.addScript(testFunction.toString());
   },
 
   function runTestFunction(next) {

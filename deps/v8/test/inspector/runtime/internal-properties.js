@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-InspectorTest.log('Checks internal properties in Runtime.getProperties output');
+let {session, contextGroup, Protocol} = InspectorTest.start('Checks internal properties in Runtime.getProperties output');
 
-InspectorTest.addScript(`
+contextGroup.addScript(`
 function* foo() {
   yield 1;
 }
@@ -29,6 +29,7 @@ InspectorTest.runTestSuite([
       .then(() => checkExpression('new Boolean(false)'))
       .then(() => checkExpression('new String(\'abc\')'))
       .then(() => checkExpression('Object(Symbol(42))'))
+      .then(() => checkExpression("Object(BigInt(2))"))
       .then(next);
   },
 

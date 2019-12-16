@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --ignition --turbo
+// Flags: --allow-natives-syntax
 
 class Base {}
 class Subclass extends Base {
@@ -11,6 +11,7 @@ class Subclass extends Base {
     super();
   }
 }
+%PrepareFunctionForOptimization(Subclass);
 new Subclass();
 new Subclass();
 %OptimizeFunctionOnNextCall(Subclass);

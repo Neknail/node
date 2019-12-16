@@ -34,19 +34,17 @@ const agent = new Agent({
   maxFreeSockets: 5
 });
 
-const server = http.createServer(function(req, res) {
+const server = http.createServer(common.mustCall((req, res) => {
   if (req.url === '/error') {
     res.destroy();
     return;
   } else if (req.url === '/remote_close') {
-    // cache the socket, close it after a short delay
+    // Cache the socket, close it after a short delay
     const socket = res.connection;
-    setImmediate(function() {
-      socket.end();
-    });
+    setImmediate(common.mustCall(() => socket.end()));
   }
   res.end('hello world');
-});
+}, 4));
 
 function get(path, callback) {
   return http.get({
@@ -54,7 +52,7 @@ function get(path, callback) {
     port: server.address().port,
     agent: agent,
     path: path
-  }, callback);
+  }, callback).on('socket', common.mustCall(checkListeners));
 }
 
 function checkDataAndSockets(body) {
@@ -64,83 +62,87 @@ function checkDataAndSockets(body) {
 }
 
 function second() {
-  // request second, use the same socket
-  get('/second', function(res) {
+  // Request second, use the same socket
+  const req = get('/second', common.mustCall((res) => {
+    assert.strictEqual(req.reusedSocket, true);
     assert.strictEqual(res.statusCode, 200);
     res.on('data', checkDataAndSockets);
-    res.on('end', function() {
+    res.on('end', common.mustCall(() => {
       assert.strictEqual(agent.sockets[name].length, 1);
       assert.strictEqual(agent.freeSockets[name], undefined);
-      process.nextTick(function() {
+      process.nextTick(common.mustCall(() => {
         assert.strictEqual(agent.sockets[name], undefined);
         assert.strictEqual(agent.freeSockets[name].length, 1);
         remoteClose();
-      });
-    });
-  });
+      }));
+    }));
+  }));
 }
 
 function remoteClose() {
-  // mock remote server close the socket
-  get('/remote_close', function(res) {
+  // Mock remote server close the socket
+  const req = get('/remote_close', common.mustCall((res) => {
+    assert.deepStrictEqual(req.reusedSocket, true);
     assert.deepStrictEqual(res.statusCode, 200);
     res.on('data', checkDataAndSockets);
-    res.on('end', function() {
+    res.on('end', common.mustCall(() => {
       assert.strictEqual(agent.sockets[name].length, 1);
       assert.strictEqual(agent.freeSockets[name], undefined);
-      process.nextTick(function() {
+      process.nextTick(common.mustCall(() => {
         assert.strictEqual(agent.sockets[name], undefined);
         assert.strictEqual(agent.freeSockets[name].length, 1);
-        // waitting remote server close the socket
-        setTimeout(function() {
+        // Waiting remote server close the socket
+        setTimeout(common.mustCall(() => {
           assert.strictEqual(agent.sockets[name], undefined);
-          assert.strictEqual(agent.freeSockets[name], undefined,
-                             'freeSockets is not empty');
+          assert.strictEqual(agent.freeSockets[name], undefined);
           remoteError();
-        }, common.platformTimeout(200));
-      });
-    });
-  });
+        }), common.platformTimeout(200));
+      }));
+    }));
+  }));
 }
 
 function remoteError() {
-  // remove server will destroy ths socket
-  const req = get('/error', function(res) {
-    throw new Error('should not call this function');
-  });
-  req.on('error', function(err) {
-    assert.ok(err);
+  // Remote server will destroy the socket
+  const req = get('/error', common.mustNotCall());
+  req.on('error', common.mustCall((err) => {
+    assert(err);
     assert.strictEqual(err.message, 'socket hang up');
     assert.strictEqual(agent.sockets[name].length, 1);
     assert.strictEqual(agent.freeSockets[name], undefined);
     // Wait socket 'close' event emit
-    setTimeout(function() {
+    setTimeout(common.mustCall(() => {
       assert.strictEqual(agent.sockets[name], undefined);
       assert.strictEqual(agent.freeSockets[name], undefined);
-      done();
-    }, common.platformTimeout(1));
-  });
+      server.close();
+    }), common.platformTimeout(1));
+  }));
 }
 
-function done() {
-  console.log('http keepalive agent test success.');
-  process.exit(0);
-}
-
-server.listen(0, function() {
+server.listen(0, common.mustCall(() => {
   name = `localhost:${server.address().port}:`;
-  // request first, and keep alive
-  get('/first', function(res) {
+  // Request first, and keep alive
+  const req = get('/first', common.mustCall((res) => {
+    assert.strictEqual(req.reusedSocket, false);
     assert.strictEqual(res.statusCode, 200);
     res.on('data', checkDataAndSockets);
-    res.on('end', function() {
+    res.on('end', common.mustCall(() => {
       assert.strictEqual(agent.sockets[name].length, 1);
       assert.strictEqual(agent.freeSockets[name], undefined);
-      process.nextTick(function() {
+      process.nextTick(common.mustCall(() => {
         assert.strictEqual(agent.sockets[name], undefined);
         assert.strictEqual(agent.freeSockets[name].length, 1);
         second();
-      });
-    });
-  });
-});
+      }));
+    }));
+  }));
+}));
+
+// Check for listener leaks when reusing sockets.
+function checkListeners(socket) {
+  assert.strictEqual(socket.listenerCount('data'), 1);
+  assert.strictEqual(socket.listenerCount('drain'), 1);
+  assert.strictEqual(socket.listenerCount('error'), 1);
+  // Sockets have onReadableStreamEnd.
+  assert.strictEqual(socket.listenerCount('end'), 2);
+}
